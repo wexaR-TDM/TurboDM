@@ -7,6 +7,11 @@ Kurulu TurboDM'i güncellemek için: *Yardım → Güncellemeleri denetle*. · [
 <!-- Geliştirici notu: her yeni sürümde en üste "## x.y.z" bölümü eklenir (İngilizcesi RELEASE_NOTES.md'ye). "Güncellemeleri denetle"
      penceresinde o sürümün bölümü gösterilir (build.ps1 otomatik olarak latest.json'a koyar). -->
 
+## 1.7.29
+• Yenilenen ana pencere: üstteki araç çubuğu yerine solda "Yeni İndirme" düğmesi (okundan toplu indirme, torrent ve magnet) ve sade bir yan menü; sağda seçili görünümün başlığı, indirme sayısı ve işlem düğmeleri. Bitenleri Sil, kuyruk ve zamanlayıcı işlemleri "Diğer" menüsünde; açık ve koyu tema renkleri de yenilendi
+• Son Deneme, Açıklama, Eklenme ve Bitiş sütunları artık başta kapalı, dosya adına daha çok yer kalıyor. Sütun başlığına sağ tıklayarak açabilirsiniz (seçim korunur)
+• Düzeltme: seçili kuyruk silinince liste boş kalıyordu; artık Tüm İndirmeler gösteriliyor
+
 ## 1.7.28
 • Düzeltme: tarayıcı indirmeyi TurboDM'e devrettikten hemen sonra, indirme başlamadan TurboDM kapanır ya da çökerse indirme kaybolabiliyordu. Artık eklenti TurboDM'i yeniden açtırıyor; TurboDM indirmeyi kaydetmişse kaldığı yerden sürdürüyor, kaydetmemişse ya da açılamıyorsa indirme tarayıcıda yeniden başlatılıyor (tarayıcı eklentisi 1.7.7)
 • Eski sürümlerin kurulum dosyaları artık GitHub'dan silinmiyor (winget gibi paket yöneticilerinin bağlantıları bozulmasın)

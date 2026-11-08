@@ -450,5 +450,8 @@
  "Elle kurulan eklentiyi tarayıcı kendiliğinden yenilemez. Yeni özellikler ve düzeltmeler için:<br>1. Tarayıcının eklentiler sayfasını açın (<b>chrome://extensions</b>, <b>brave://extensions</b>, <b>edge://extensions</b> ya da <b>opera://extensions</b>)<br>2. TurboDM Entegrasyonu kartındaki yenile (↻) düğmesine basın<br>3. Açık sayfaları yenileyin (F5)": "The browser doesn't reload a manually installed extension by itself. To get new features and fixes:<br>1. Open the browser's extensions page (<b>chrome://extensions</b>, <b>brave://extensions</b>, <b>edge://extensions</b> or <b>opera://extensions</b>)<br>2. Click the reload (↻) button on the TurboDM Integration card<br>3. Reload open pages (F5)",
  "Bu tarayıcıdaki TurboDM eklentisi eski bir sürüm ({0}); TurboDM ile gelen sürüm {1}.": "The TurboDM extension in this browser is an old version ({0}); the version that comes with TurboDM is {1}.",
  "Bu tarayıcıdaki TurboDM eklentisi eski bir sürüm; TurboDM ile gelen sürüm {0}.": "The TurboDM extension in this browser is an old version; the version that comes with TurboDM is {0}.",
- "TurboDM indirmeyi devralırken kapandı": "TurboDM closed while taking over the download"
+ "TurboDM indirmeyi devralırken kapandı": "TurboDM closed while taking over the download",
+ "Yeni İndirme": "New Download",
+ "Diğer": "More",
+ "{0} indirme, {1} tanesi etkin": "Downloads: {0}, active: {1}"
 }

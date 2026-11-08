@@ -25,7 +25,7 @@ os.environ.update(APPDATA=os.path.join(TMP, "appdata"), QT_QPA_PLATFORM="offscre
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.dirname(__file__))
 
-from PySide6.QtWidgets import QApplication, QTabWidget  # noqa: E402
+from PySide6.QtWidgets import QApplication, QTabWidget, QToolBar  # noqa: E402
 from test_turbodm import FakeServer  # noqa: E402
 from turbodm import manager as M, server, updater  # noqa: E402
 
@@ -531,6 +531,124 @@ class GuiTests(unittest.TestCase):
         finally:
             it.status = "stopped"
             self.win.mgr.remove(it.id)
+
+    def test_main_window_shell(self):
+        win = self.win
+        self.assertFalse(win.findChildren(QToolBar))  # araç çubuğu yerine yan menü ve sayfa başlığı
+        # "Yeni İndirme": tıklama URL ekler, okundan bütün ekleme yolları açılır
+        calls = []
+        win.a_add.triggered.disconnect()  # gerçek pencere açılıp testi bekletmesin
+        win.a_add.triggered.connect(lambda: calls.append(1))
+        win._new_btn.click()
+        self.assertEqual(calls, [1])
+        win.a_add.triggered.disconnect()
+        win.a_add.triggered.connect(lambda: win.add_url_prompt())
+        self.assertEqual(win._new_menu_btn.menu().actions(), [win.a_add, win.a_batch, win.a_torrent, win.a_magnet])
+        # kaldırılan araç çubuğundaki işlemler hâlâ ulaşılabilir
+        reach = {a for b in win.findChildren(G.QToolButton) for a in b.actions()}
+        reach |= {a for b in (win._new_menu_btn, win._more_btn) for a in b.menu().actions()}
+        for a in (win.a_resume, win.a_stop, win.a_stop_all, win.a_delete, win.a_delete_done, win.a_options,
+                  win.a_sched, win.a_qstart, win.a_qstop):
+            self.assertIn(a, reach, a.text())
+        # gezinme: görünümler üstte, kategoriler başlığın altında; başlık seçilemez ve sayaç hatası vermez
+        tree = win.tree
+        keys = [tree.topLevelItem(i).data(0, G.Qt.UserRole) for i in range(tree.topLevelItemCount())]
+        self.assertEqual(keys[:5], ["all", "unfinished", "finished", "queue", None])
+        self.assertTrue(all(k.startswith("cat:") for k in keys[5:]) and len(keys) > 5)
+        head = tree.topLevelItem(4)
+        self.assertEqual(head.text(0), "Kategoriler")
+        self.assertEqual(head.flags(), G.Qt.NoItemFlags)
+        win.refresh(force=True)
+        # sayfa başlığı seçili görünümü ve sayıları izler
+        tree.setCurrentItem(tree.topLevelItem(2))
+        self.assertEqual(win.page_title.text(), "Bitmiş")
+        n = len(win._visible)
+        self.assertEqual(win.page_sub.text(), f"{n} indirme, 0 tanesi etkin")
+        tree.setCurrentItem(tree.topLevelItem(0))
+        self.assertEqual(win.page_title.text(), "Tüm İndirmeler")
+        # tema değişince yeni düğmeler ve bölüm başlığı hata vermez
+        G.theme.apply(APP, "light")
+        G.theme.apply(APP, "dark")
+        G.theme.apply(APP, "auto")
+        self.assertFalse(win._more_btn.icon().isNull())
+
+    def test_selection_box_is_visible_in_both_themes(self):
+        # Seçilmemiş kutu zeminden belirgin ayrılmalı (koyu temada soluk kalıyordu); seçilince vurgu rengi dolar
+        from PySide6.QtGui import QColor
+        win = self.win
+        it = win.mgr.add_http(self.s.url("/arsiv.zip"), os.path.join(TMP, "dl", "kutu.zip"), start=False)
+        self.addCleanup(lambda: it.id in win.mgr.items and win.mgr.remove(it.id))
+        win.tree.setCurrentItem(win.tree.topLevelItem(0))
+        win.refresh(force=True)
+        row = win._visible.index(it.id)
+        win.table.clearSelection()
+        try:
+            for mode in ("dark", "light"):
+                G.theme.apply(APP, mode)
+                pump(0.1)
+                rect = win.table.visualRect(win.table.model().index(row, G.SEL))
+                self.assertTrue(rect.isValid())
+                img = win.table.viewport().grab(rect).toImage()
+                ratio = img.width() / rect.width()
+                bg = QColor(img.pixel(1, 1))
+                y = int(img.height() / 2)
+                edge = [QColor(img.pixel(x, y)) for x in range(img.width())]
+                diff = max(abs(c.lightness() - bg.lightness()) for c in edge)
+                self.assertGreater(diff, 60, f"{mode}: kutu kenarı zeminden ayrılmıyor ({ratio})")
+        finally:
+            G.theme.apply(APP, "auto")
+
+    def test_extra_columns_start_hidden_once(self):
+        win = self.win
+        st = win.mgr.settings
+        saved = (list(st["hidden_columns"]), st.get("columns_v2"))
+        try:
+            # önceki sürümden gelen ayar: ek sütunlar bir kez gizlenir, kullanıcının seçimi sonra korunur
+            st["hidden_columns"], st["columns_v2"] = [3], False
+            win._retranslate()
+            self.assertEqual(st["hidden_columns"], [3, 6, 7, 8, 9])
+            self.assertTrue(st["columns_v2"])
+            win._set_column(8, True)
+            win._retranslate()
+            self.assertFalse(win.table.isColumnHidden(8))
+            self.assertTrue(win.table.isColumnHidden(9))
+        finally:
+            st["hidden_columns"], st["columns_v2"] = saved
+            win._retranslate()
+
+    def test_shell_edge_cases(self):
+        win = self.win
+        st = win.mgr.settings
+        saved = (list(st["hidden_columns"]), st.get("columns_v2"))
+        q = None
+        try:
+            # açılışta ve dil değişince odak listede: Ctrl+A, Esc gibi liste kısayolları hemen çalışır
+            self.assertIs(win.focusWidget(), win.table)
+            # bozuk ayar programı açılışta düşürmesin
+            st["hidden_columns"], st["columns_v2"] = ["x", [1], 3], False
+            win._retranslate()
+            self.assertEqual(st["hidden_columns"], [3, 6, 7, 8, 9])
+            self.assertIs(win.focusWidget(), win.table)
+            # seçili kuyruk silinince liste boş kalmaz, başlık ile içerik aynı görünümü gösterir
+            q = win.mgr.add_queue("Geçici")
+            win._retranslate()
+            win._filter = "queue:" + q["id"]
+            win._retranslate()
+            self.assertEqual(win.page_title.text(), "Geçici")
+            win.mgr.remove_queue(q["id"])
+            win._retranslate()
+            self.assertEqual(win._filter, "all")
+            self.assertEqual(win.page_title.text(), "Tüm İndirmeler")
+            # dönüştürülen indirme de etkin sayılır (çıkış uyarısıyla aynı)
+            it = win.mgr.add_http("http://127.0.0.1:9/donusum.mp4", os.path.join(TMP, "donusum.mp4"), start=False)
+            it.status = "converting"
+            win.refresh(force=True)
+            self.assertIn("1 tanesi etkin", win.page_sub.text())
+            it.status = "stopped"
+            win.mgr.remove(it.id)
+        finally:
+            st["hidden_columns"], st["columns_v2"] = saved
+            win._retranslate()
 
     def test_columns_can_be_hidden_and_dates_shown(self):
         self.assertEqual(G.COLUMNS[-2:], ["Eklenme", "Bitiş"])

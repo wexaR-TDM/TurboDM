@@ -14,23 +14,23 @@ from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPalette, QPen,
 
 DARK = {
     "dark": True,
-    "bg": "#0f141b", "surface": "#151b24", "surface2": "#1b2330", "alt": "#18202a", "input": "#111720",
-    "border": "#273142", "border_soft": "#1f2835", "hover": "#222c3b",
-    "text": "#e7ecf3", "muted": "#8b97a9", "track": "#232d3c", "scroll": "#334055",
+    "bg": "#0c1016", "side": "#10151d", "surface": "#151b24", "surface2": "#1b2330", "alt": "#18202a", "input": "#111720",
+    "border": "#232c3a", "border_soft": "#1b2330", "hover": "#1c2533",
+    "text": "#e9edf4", "muted": "#94a0b2", "track": "#242e3d", "scroll": "#334055",
     "accent": "#3b8cf0", "accent2": "#5aa6ff", "accent_hover": "#5199f3",
     "accent_soft": "#1d3a63", "accent_text": "#9cc8ff",
     "ok": "#3ccf7e", "warn": "#f0b44a", "bad": "#ff6b63",
-    "caption": "#0f141b",
+    "caption": "#10151d",
 }
 LIGHT = {
     "dark": False,
-    "bg": "#f3f5f9", "surface": "#ffffff", "surface2": "#eef2f7", "alt": "#f8fafd", "input": "#ffffff",
-    "border": "#d8dfe9", "border_soft": "#e6ebf2", "hover": "#e8eef7",
-    "text": "#17202c", "muted": "#5f6d80", "track": "#e3e9f2", "scroll": "#c3cddb",
+    "bg": "#f3f5f9", "side": "#fafbfd", "surface": "#ffffff", "surface2": "#eef2f7", "alt": "#f8fafd", "input": "#ffffff",
+    "border": "#dfe5ee", "border_soft": "#edf0f5", "hover": "#f1f5fa",
+    "text": "#17202c", "muted": "#5a6779", "track": "#e3e9f2", "scroll": "#c3cddb",
     "accent": "#1f6fe0", "accent2": "#3b8cf0", "accent_hover": "#1a62c8",
     "accent_soft": "#d9e8fd", "accent_text": "#0f4fa8",
     "ok": "#1f9d57", "warn": "#c98a12", "bad": "#d93a32",
-    "caption": "#f3f5f9",
+    "caption": "#fafbfd",
 }
 
 T = dict(DARK)
@@ -49,7 +49,7 @@ QMainWindow, QDialog { background: $bg; }
 QWidget { color: $text; }
 QToolTip { background: $surface2; color: $text; border: 1px solid $border; padding: 5px 8px; border-radius: 6px; }
 
-QMenuBar { background: $bg; padding: 3px 6px; }
+QMenuBar { background: $side; border-bottom: 1px solid $border; padding: 3px 8px; }
 QMenuBar::item { padding: 5px 10px; border-radius: 6px; background: transparent; }
 QMenuBar::item:selected { background: $hover; }
 QMenu { background: $surface; border: 1px solid $border; border-radius: 10px; padding: 6px; }
@@ -59,34 +59,41 @@ QMenu::item:selected { background: $accent_soft; color: $accent_text; }
 QMenu::item:disabled { color: $muted; }
 QMenu::separator { height: 1px; background: $border; margin: 5px 8px; }
 
-QToolBar#main { background: $surface2; border: none; border-bottom: 1px solid $border; padding: 6px 10px; spacing: 2px; }
-QToolBar#main::separator { width: 1px; background: $border; margin: 10px 7px; }
-QToolBar#main QToolButton { background: transparent; border: none; border-radius: 9px; padding: 6px 9px; color: $text; }
-QToolBar#main QToolButton:hover { background: $hover; }
-QToolBar#main QToolButton:pressed { background: $accent_soft; color: $accent_text; }
-QToolBar#main QToolButton:disabled { color: $muted; }
-QLabel#brand { font-size: 17px; font-weight: 700; color: $text; padding-right: 10px; }
-QLabel#brandSub { color: $muted; font-size: 11px; }
+QFrame#sidebar { background: $side; border: none; }
+QFrame#sideLine { background: $border; border: none; }
+QToolButton#newDownload, QToolButton#newDownloadMenu { background: $accent; color: #ffffff; border: none; border-radius: 9px;
+    font-size: 14px; font-weight: 600; padding: 9px 8px; }
+QToolButton#newDownload:hover, QToolButton#newDownloadMenu:hover { background: $accent_hover; }
+QToolButton#newDownloadMenu::menu-indicator, QToolButton#headMenu::menu-indicator { image: none; }
+QToolButton#sideButton { background: transparent; border: none; border-radius: 7px; padding: 8px 10px; color: $muted; }
+QToolButton#sideButton:hover { background: $hover; color: $text; }
+QToolButton#headButton, QToolButton#headMenu { background: $surface; border: 1px solid $border; border-radius: 8px;
+    padding: 7px 12px; color: $text; }
+QToolButton#headButton:hover, QToolButton#headMenu:hover { background: $hover; }
+QToolButton#headButton:pressed, QToolButton#headMenu:pressed { background: $accent_soft; }
+QToolButton#headButton:disabled { color: $muted; }
+QLabel#pageTitle { font-size: 21px; font-weight: 600; }
+QLabel#pageSub { color: $muted; }
+QFrame#listFrame { background: $surface; border: 1px solid $border; border-bottom: none;
+    border-top-left-radius: 12px; border-top-right-radius: 12px; }
 
-QTreeWidget#nav { background: $surface; border: none; border-right: 1px solid $border; padding: 10px 8px; outline: 0; }
+QTreeWidget#nav { background: transparent; border: none; padding: 0; outline: 0; }
 QTreeWidget#nav::item { padding: 7px 6px; border-radius: 8px; margin: 1px 0; border: none; }
 QTreeWidget#nav::item:hover { background: $hover; }
-QTreeWidget#nav::item:selected { background: $accent_soft; color: $accent_text; }
+QTreeWidget#nav::item:selected { background: $accent_soft; color: $text; }
 
 QTableWidget#list { background: $surface; alternate-background-color: $alt; border: none; gridline-color: transparent;
     selection-background-color: $accent_soft; selection-color: $text; outline: 0; }
-QTableWidget#list::item { border: none; padding: 0 6px; }
+QTableWidget#list::item { border: none; border-bottom: 1px solid $border_soft; padding: 0 6px; }
 QTableWidget#list::item:selected { background: $accent_soft; color: $text; }
-QHeaderView { background: $surface2; }
-QHeaderView::section { background: $surface2; color: $muted; border: none; border-bottom: 1px solid $border;
-    border-right: 1px solid $border_soft; padding: 7px 8px; font-weight: 600; }
-QTableCornerButton::section { background: $surface2; border: none; }
+QHeaderView { background: $surface; }
+QHeaderView::section { background: $surface; color: $muted; border: none; border-bottom: 1px solid $border;
+    padding: 7px 8px; font-weight: 600; }
+QTableCornerButton::section { background: $surface; border: none; }
 
-QStatusBar { background: $surface2; color: $muted; border-top: 1px solid $border; }
+QStatusBar { background: $side; color: $muted; border-top: 1px solid $border; }
 QStatusBar QLabel { color: $muted; padding: 2px 8px; }
 QStatusBar::item { border: none; }
-QSplitter::handle { background: $border; }
-QSplitter::handle:horizontal { width: 1px; }
 
 QPushButton { background: $surface2; color: $text; border: 1px solid $border; border-radius: 8px; padding: 6px 16px; min-height: 18px; }
 QPushButton:hover { border-color: $accent; background: $hover; }
@@ -290,7 +297,14 @@ def _fill(p, color):
 
 def _draw(name, p, fg, ac):
     """64x64 ızgarada çizgi simgeler. fg: ana renk, ac: vurgu rengi."""
-    if name == "add":  # bağlantı + artı
+    if name == "plus":  # tek renk artı (dolu düğme üstünde)
+        _pen(p, ac, 7)
+        p.drawLine(32, 12, 32, 52)
+        p.drawLine(12, 32, 52, 32)
+    elif name == "chevron":  # açılır menü oku
+        _pen(p, ac, 7)
+        _poly(p, [(14, 24), (32, 42), (50, 24)])
+    elif name == "add":  # bağlantı + artı
         _pen(p, fg)
         p.drawRoundedRect(QRectF(8, 8, 48, 48), 14, 14)
         _pen(p, ac, 6)

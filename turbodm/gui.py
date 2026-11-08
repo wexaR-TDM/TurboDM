@@ -9,12 +9,12 @@ import uuid
 from datetime import datetime
 
 from PySide6.QtCore import QObject, QPointF, QRectF, QSize, Qt, QTime, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QActionGroup, QColor, QDesktopServices, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtGui import QAction, QActionGroup, QColor, QDesktopServices, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-    QFileDialog, QFormLayout, QGridLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
-    QLineEdit, QMainWindow, QMenu, QMenuBar, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox, QSplitter, QStyle,
-    QSystemTrayIcon, QTableWidget, QTableWidgetItem, QTabWidget, QTimeEdit, QToolBar,
+    QFileDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
+    QLineEdit, QMainWindow, QMenu, QMenuBar, QMessageBox, QPlainTextEdit, QPushButton, QSizePolicy, QSpinBox, QStyle,
+    QSystemTrayIcon, QTableWidget, QTableWidgetItem, QTabWidget, QTimeEdit, QToolButton,
     QGroupBox, QProgressBar, QTextBrowser, QStyledItemDelegate, QStyleOptionViewItem,
     QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
@@ -2049,21 +2049,80 @@ COUNT_ROLE = Qt.UserRole + 2      # kenar çubuğu: kategorideki indirme sayıs�
 
 
 class NavDelegate(QStyledItemDelegate):
-    """Kenar çubuğu: kategori adı + sağda soluk renkte indirme sayısı (aynı yuvarlatılmış satırda)."""
+    """Kenar çubuğu: kategori adı + sağda soluk renkte indirme sayısı (aynı yuvarlatılmış satırda). Seçili satırda
+    kalın yazı ve kenarda vurgu çizgisi; anahtarı olmayan satır bölüm başlığıdır ("Kategoriler")."""
 
     def sizeHint(self, option, index):
         s = super().sizeHint(option, index)
         return QSize(s.width() + 30, max(s.height(), 34))  # ferah satırlar + sayı için yer
 
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        if option.state & QStyle.State_Selected:
+            option.font.setBold(True)
+
     def paint(self, p, option, index):
+        if index.data(Qt.UserRole) is None:  # bölüm başlığı
+            p.save()
+            f = QFont(option.font)
+            f.setBold(True)
+            p.setFont(f)
+            p.setPen(QColor(theme.T["muted"]))
+            p.drawText(option.rect.adjusted(10, 6, -10, 0), Qt.AlignLeft | Qt.AlignVCenter, index.data())
+            p.restore()
+            return
         super().paint(p, option, index)
+        sel = option.state & QStyle.State_Selected
         n = index.data(COUNT_ROLE)
         if n:
             p.save()
-            sel = option.state & QStyle.State_Selected
             p.setPen(QColor(theme.T["accent_text"] if sel else theme.T["muted"]))
-            p.drawText(option.rect.adjusted(0, 0, -10, 0), Qt.AlignRight | Qt.AlignVCenter, str(n))
+            p.drawText(option.rect.adjusted(10, 0, -10, 0), Qt.AlignRight | Qt.AlignVCenter, str(n))  # Arapçada sola geçer
             p.restore()
+        if sel:
+            p.save()
+            p.setRenderHint(QPainter.Antialiasing)
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(theme.T["accent"]))
+            r = option.rect
+            x = r.right() - 2 if option.direction == Qt.RightToLeft else r.left()
+            p.drawRoundedRect(QRectF(x, r.top() + 8, 3, r.height() - 16), 1.5, 1.5)
+            p.restore()
+
+
+class CheckDelegate(QStyledItemDelegate):
+    """Seçim sütunu: temaya göre çizilen, her iki temada da belirgin onay kutusu."""
+
+    def paint(self, p, option, index):
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        checked = Qt.CheckState(index.data(Qt.CheckStateRole)) == Qt.Checked
+        opt.features &= ~QStyleOptionViewItem.HasCheckIndicator
+        opt.text = ""
+        style = opt.widget.style() if opt.widget else QApplication.style()
+        style.drawControl(QStyle.CE_ItemViewItem, opt, p, opt.widget)  # zemin ve seçim
+        c = QRectF(opt.rect).center()
+        box = QRectF(c.x() - 8, c.y() - 8, 16, 16)
+        p.save()
+        p.setRenderHint(QPainter.Antialiasing)
+        if checked:
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(theme.T["accent"]))
+            p.drawRoundedRect(box, 4, 4)
+            pen = QPen(QColor("#ffffff"), 2)
+            pen.setCapStyle(Qt.RoundCap)
+            pen.setJoinStyle(Qt.RoundJoin)
+            p.setPen(pen)
+            p.setBrush(Qt.NoBrush)
+            path = QPainterPath(QPointF(box.x() + 4, box.y() + 8.5))
+            path.lineTo(box.x() + 7, box.y() + 11.5)
+            path.lineTo(box.x() + 12, box.y() + 5)
+            p.drawPath(path)
+        else:
+            p.setPen(QPen(QColor(theme.T["muted"]), 1.5))
+            p.setBrush(Qt.NoBrush)
+            p.drawRoundedRect(box.adjusted(0.75, 0.75, -0.75, -0.75), 3.5, 3.5)
+        p.restore()
 
 
 class StatusDelegate(QStyledItemDelegate):
@@ -2192,11 +2251,14 @@ class MainWindow(QMainWindow):
             name = a.property("tdm_icon")
             if name:
                 a.setIcon(theme.icon(name))
-        self._brand_icon.setPixmap(self.icon.pixmap(30, 30))
+        self._new_btn.setIcon(theme.icon("plus", "#ffffff"))
+        self._new_menu_btn.setIcon(theme.icon("chevron", "#ffffff"))
+        self._more_btn.setIcon(theme.icon("chevron", "muted"))
         for i in range(self.tree.topLevelItemCount()):
             top = self.tree.topLevelItem(i)
             for it in [top] + [top.child(j) for j in range(top.childCount())]:
-                it.setIcon(0, theme.icon(it.data(0, Qt.UserRole + 1)))
+                if it.data(0, Qt.UserRole + 1):  # bölüm başlığının simgesi yok
+                    it.setIcon(0, theme.icon(it.data(0, Qt.UserRole + 1)))
         for r in range(self.table.rowCount()):  # durum simgeleri yeniden
             cell = self.table.item(r, NAME)
             if cell:
@@ -2233,29 +2295,6 @@ class MainWindow(QMainWindow):
             self, APP_NAME, _t("<b>{0}</b> {1}<br>Çok bağlantılı HTTP/HTTPS, FTP, video (HLS/DASH) ve BitTorrent indirme yöneticisi.<br><br>Özgür yazılım: GNU GPL v3 lisansı. Kaynak kodu: <a href=\"https://github.com/{2}\">github.com/{3}</a>").format(APP_NAME, VERSION, UPDATE_REPO, UPDATE_REPO)))
         self._build_language_menu(mb)
 
-        tb = QToolBar(_t("Araçlar"))
-        tb.setObjectName("main")
-        tb.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
-        tb.setIconSize(QSize(26, 26))
-        tb.setMovable(False)
-        brand = QWidget()  # sol başta TurboDM logosu ve adı
-        bl = QHBoxLayout(brand)
-        bl.setContentsMargins(4, 0, 12, 0)
-        bl.setSpacing(8)
-        self._brand_icon = QLabel()
-        self._brand_icon.setPixmap(self.icon.pixmap(30, 30))
-        name = QLabel("TurboDM")
-        name.setObjectName("brand")
-        bl.addWidget(self._brand_icon)
-        bl.addWidget(name)
-        tb.addWidget(brand)
-        tb.addSeparator()
-        for a in (self.a_add, self.a_torrent, self.a_magnet, None, self.a_resume, self.a_stop,
-                  self.a_stop_all, None, self.a_delete, self.a_delete_done, None, self.a_options,
-                  self.a_sched, self.a_qstart, self.a_qstop):
-            tb.addSeparator() if a is None else tb.addAction(a)
-        self.addToolBar(tb)
-
         self.tree = QTreeWidget()
         self.tree.setObjectName("nav")
         self.tree.setHeaderHidden(True)
@@ -2274,8 +2313,6 @@ class MainWindow(QMainWindow):
             it.setIcon(0, theme.icon(ic))
             return it
         root = nav_item(_t("Tüm İndirmeler"), "all", "all")
-        for key, (disp, _, _) in CATEGORIES.items():
-            root.addChild(nav_item(disp, "cat:" + key, cat_icons.get(key, "general")))
         self.tree.addTopLevelItem(root)
         for text, key, ic in ((_t("Bitmemiş"), "unfinished", "unfinished"), (_t("Bitmiş"), "finished", "finished"),
                               (_t("Kuyruk"), "queue", "queue")):
@@ -2284,6 +2321,11 @@ class MainWindow(QMainWindow):
                 for q in self.mgr.queues():
                     node.addChild(nav_item(q["name"], "queue:" + q["id"], "queue"))
             self.tree.addTopLevelItem(node)
+        head = QTreeWidgetItem([_t("Kategoriler")])  # seçilemeyen bölüm başlığı
+        head.setFlags(Qt.NoItemFlags)
+        self.tree.addTopLevelItem(head)
+        for key, (disp, _, _) in CATEGORIES.items():
+            self.tree.addTopLevelItem(nav_item(disp, "cat:" + key, cat_icons.get(key, "general")))
         self.tree.expandAll()
         self.tree.setItemsExpandable(False)
         self.tree.setCurrentItem(root)
@@ -2291,6 +2333,7 @@ class MainWindow(QMainWindow):
 
         self.table = DownloadTable(0, len(COLUMNS))
         self.table.setObjectName("list")
+        self.table.setItemDelegateForColumn(SEL, CheckDelegate(self.table))
         self.table.setItemDelegateForColumn(STATUS, StatusDelegate(self.table))
         self.table.setIconSize(QSize(18, 18))
         self.table.setHorizontalHeaderLabels(COLUMNS)
@@ -2312,33 +2355,140 @@ class MainWindow(QMainWindow):
         self.table.setShowGrid(False)
         self.table.setWordWrap(False)
         self.table.verticalHeader().setDefaultSectionSize(34)
-        self.table.setAlternatingRowColors(True)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._context_menu)
         self.table.doubleClicked.connect(self._double_click)
         h = self.table.horizontalHeader()
         h.setSectionResizeMode(NAME, QHeaderView.Stretch)
         h.setSectionResizeMode(SEL, QHeaderView.Fixed)
-        for c, w in ((SEL, 30), (2, 90), (3, 150), (4, 90), (5, 100), (6, 130), (7, 150), (8, 130), (9, 130)):
+        for c, w in ((SEL, 30), (2, 90), (3, 150), (4, 90), (5, 125), (6, 130), (7, 150), (8, 130), (9, 130)):
             self.table.setColumnWidth(c, w)
         # sütun başlığına sağ tık: sütunları göster/gizle (seçim ve dosya adı her zaman görünür)
         h.setContextMenuPolicy(Qt.CustomContextMenu)
         h.customContextMenuRequested.connect(self._column_menu)
-        for c in self.mgr.settings.get("hidden_columns", []):
+        st = self.mgr.settings
+        if not st.get("columns_v2"):  # yeni görünüm: ek sütunlar başta kapalı, sütun başlığına sağ tıkla açılır
+            st["hidden_columns"] = sorted({c for c in st.get("hidden_columns") or [] if isinstance(c, int)} | {6, 7, 8, 9})
+            st["columns_v2"] = True
+        for c in st["hidden_columns"]:
             if isinstance(c, int) and NAME < c < len(COLUMNS):
                 self.table.setColumnHidden(c, True)
 
-        split = QSplitter()
-        split.addWidget(self.tree)
-        split.addWidget(self.table)
-        split.setSizes([210, 890])
-        split.setHandleWidth(1)
-        split.setChildrenCollapsible(False)
-        self.setCentralWidget(split)
+        body = QWidget()
+        lay = QHBoxLayout(body)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        lay.addWidget(self._build_sidebar())
+        line = QFrame()  # kenarlık değil ayrı çizgi: Arapçada yan menüyle birlikte yer değiştirir
+        line.setObjectName("sideLine")
+        line.setFixedWidth(1)
+        lay.addWidget(line)
+        lay.addWidget(self._build_main_area(), 1)
+        self.setCentralWidget(body)
         self.sel_lbl = QLabel()
         self.statusBar().addPermanentWidget(self.sel_lbl)
         self.speed_lbl = QLabel()
         self.statusBar().addPermanentWidget(self.speed_lbl)
+        self.table.setFocus()  # açılışta odak "Yeni İndirme"ye gitmesin: Ctrl+A, Esc liste odaktayken çalışır
+
+    def _build_sidebar(self):
+        """Sol sütun: "Yeni İndirme" düğmesi (okundan diğer ekleme yolları), gezinme, en altta Seçenekler."""
+        side = QFrame()
+        side.setObjectName("sidebar")
+        side.setFixedWidth(236)
+        lay = QVBoxLayout(side)
+        lay.setContentsMargins(12, 16, 12, 10)
+        lay.setSpacing(14)
+        row = QHBoxLayout()
+        row.setSpacing(2)
+        self._new_btn = QToolButton()
+        self._new_btn.setObjectName("newDownload")
+        self._new_btn.setText(_t("Yeni İndirme"))
+        self._new_btn.setToolTip(self.a_add.toolTip())
+        self._new_btn.setIcon(theme.icon("plus", "#ffffff"))
+        self._new_btn.setIconSize(QSize(16, 16))
+        self._new_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self._new_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._new_btn.clicked.connect(self.a_add.trigger)
+        self._new_menu_btn = QToolButton()
+        self._new_menu_btn.setObjectName("newDownloadMenu")
+        self._new_menu_btn.setIcon(theme.icon("chevron", "#ffffff"))
+        self._new_menu_btn.setIconSize(QSize(14, 14))
+        self._new_menu_btn.setToolTip(_t("Diğer"))
+        self._new_menu_btn.setPopupMode(QToolButton.InstantPopup)
+        menu = QMenu(self._new_menu_btn)
+        for a in (self.a_add, self.a_batch, self.a_torrent, self.a_magnet):
+            menu.addAction(a)
+        self._new_menu_btn.setMenu(menu)
+        self._new_menu_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        row.addWidget(self._new_btn, 1)
+        row.addWidget(self._new_menu_btn)
+        lay.addLayout(row)
+        lay.addWidget(self.tree, 1)
+        options = QToolButton()
+        options.setObjectName("sideButton")
+        options.setDefaultAction(self.a_options)
+        options.setIconSize(QSize(18, 18))
+        options.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        options.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        lay.addWidget(options)
+        return side
+
+    def _build_main_area(self):
+        """Sağ taraf: sayfa başlığı ve işlem düğmeleri, altında indirme listesi."""
+        area = QWidget()
+        lay = QVBoxLayout(area)
+        lay.setContentsMargins(22, 18, 22, 0)
+        lay.setSpacing(14)
+        head = QHBoxLayout()
+        head.setSpacing(8)
+        titles = QVBoxLayout()
+        titles.setSpacing(0)
+        self.page_title = QLabel()
+        self.page_title.setObjectName("pageTitle")
+        self.page_sub = QLabel()
+        self.page_sub.setObjectName("pageSub")
+        for w in (self.page_title, self.page_sub):
+            w.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)  # dar pencerede düğmeleri itmesin
+            titles.addWidget(w)
+        head.addLayout(titles, 1)
+        for a in (self.a_resume, self.a_stop, self.a_stop_all, self.a_delete):
+            b = QToolButton()
+            b.setObjectName("headButton")
+            b.setDefaultAction(a)
+            b.setIconSize(QSize(16, 16))
+            b.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+            head.addWidget(b)
+        self._more_btn = QToolButton()
+        self._more_btn.setObjectName("headMenu")
+        self._more_btn.setText(_t("Diğer"))
+        self._more_btn.setIcon(theme.icon("chevron", "muted"))
+        self._more_btn.setIconSize(QSize(12, 12))
+        self._more_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self._more_btn.setPopupMode(QToolButton.InstantPopup)
+        menu = QMenu(self._more_btn)
+        for a in (self.a_delete_done, None, self.a_qstart, self.a_qstop, self.a_sched):
+            menu.addSeparator() if a is None else menu.addAction(a)
+        self._more_btn.setMenu(menu)
+        head.addWidget(self._more_btn)
+        lay.addLayout(head)
+        frame = QFrame()
+        frame.setObjectName("listFrame")
+        fl = QVBoxLayout(frame)
+        fl.setContentsMargins(1, 6, 1, 0)  # başlık satırı yuvarlak köşelerin altında kalsın
+        fl.addWidget(self.table)
+        lay.addWidget(frame, 1)
+        return area
+
+    def _update_page_head(self):
+        cur = self.tree.currentItem()
+        title = cur.text(0) if cur else ""
+        active = sum(1 for i in self._visible if self.mgr.items[i].status in ("downloading", "connecting", "converting"))
+        sub = _t("{0} indirme, {1} tanesi etkin").format(len(self._visible), active)
+        if self.page_title.text() != title:
+            self.page_title.setText(title)
+        if self.page_sub.text() != sub:
+            self.page_sub.setText(sub)
 
     def _build_language_menu(self, mb):
         """Menü çubuğunda sabit 'Language' menüsü: adı her dilde aynı, böylece dili bilmeyen de bulur."""
@@ -2475,6 +2625,7 @@ class MainWindow(QMainWindow):
             self._select_rows([r for r, iid in enumerate(ids) if iid in sel])
         for r, iid in enumerate(self._visible):
             self._update_row(r, self.mgr.items[iid])
+        self._update_page_head()
 
     def _smoothed(self, it):
         """İnen indirmenin akıcı gösterilen (indirilen, hız) değerleri; diğerlerinde gerçek değerler."""
@@ -2543,6 +2694,8 @@ class MainWindow(QMainWindow):
             top = self.tree.topLevelItem(i)
             for node in [top] + [top.child(j) for j in range(top.childCount())]:
                 self._filter = node.data(0, Qt.UserRole)
+                if self._filter is None:  # bölüm başlığı
+                    continue
                 n = sum(1 for it in items if self._match(it))
                 if node.data(0, COUNT_ROLE) != n:
                     node.setData(0, COUNT_ROLE, n)
@@ -3051,7 +3204,7 @@ class MainWindow(QMainWindow):
 
     # ---------------------------------------------------------- dil
     def set_language(self, code):
-        """Dili anında değiştirir, program kapanmaz: indirmeler sürer; menüler, araç çubuğu, liste ve açık
+        """Dili anında değiştirir, program kapanmaz: indirmeler sürer; menüler, yan menü, liste ve açık
         indirme pencereleri yeni dille yeniden kurulur."""
         if code not in i18n.LANGUAGES and code != "auto":
             return
@@ -3070,9 +3223,6 @@ class MainWindow(QMainWindow):
     def _retranslate(self):
         filt, sel = self._filter, set(self.selected_ids())
         old_actions = [v for k, v in vars(self).items() if k.startswith("a_") and isinstance(v, QAction)]
-        for tb in self.findChildren(QToolBar):
-            self.removeToolBar(tb)
-            tb.deleteLater()
         for w in (self.sel_lbl, self.speed_lbl):
             self.statusBar().removeWidget(w)
             w.deleteLater()
@@ -3092,6 +3242,7 @@ class MainWindow(QMainWindow):
             for it in [top] + [top.child(j) for j in range(top.childCount())]:
                 if it.data(0, Qt.UserRole) == filt:
                     self.tree.setCurrentItem(it)
+        self._filter = self.tree.currentItem().data(0, Qt.UserRole)  # seçili kuyruk silindiyse "Tüm İndirmeler"e dön
         self._visible = []
         self.refresh(force=True)
         self._select_rows([r for r, iid in enumerate(self._visible) if iid in sel])

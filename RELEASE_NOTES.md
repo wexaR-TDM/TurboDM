@@ -7,6 +7,11 @@ To update an installed TurboDM: *Help → Check for updates*. · [Türkçe sür�
 <!-- Developer note: add a "## x.y.z" section at the top for every new version, in the same order as
      SURUM_NOTLARI.md. The update window shows the section of that version (build.ps1 puts it into latest.json). -->
 
+## 1.7.29
+• Redesigned main window: instead of the top toolbar, a "New Download" button on the left (its arrow offers batch downloads, torrents and magnets) and a clean sidebar; on the right, the title of the selected view, the download count and action buttons. Delete Completed, queue and scheduler actions are in the "More" menu; light and dark theme colors were refreshed too
+• The Last Try, Description, Added and Finished columns are now hidden at first, leaving more room for file names. Right-click a column header to show them (your choice is kept)
+• Fix: deleting the selected queue left an empty list; All Downloads is now shown
+
 ## 1.7.28
 • Fix: if TurboDM closed or crashed right after the browser handed a download over to it, before the download started, the download could be lost. The extension now relaunches TurboDM; if TurboDM had saved the download it continues it, and if it hadn't (or can't be launched) the download is restarted in the browser (browser extension 1.7.7)
 • Setup files of older versions are no longer deleted from GitHub (so links used by package managers such as winget keep working)
