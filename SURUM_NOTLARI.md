@@ -7,6 +7,13 @@ Kurulu TurboDM'i güncellemek için: *Yardım → Güncellemeleri denetle*. · [
 <!-- Geliştirici notu: her yeni sürümde en üste "## x.y.z" bölümü eklenir (İngilizcesi RELEASE_NOTES.md'ye). "Güncellemeleri denetle"
      penceresinde o sürümün bölümü gösterilir (build.ps1 otomatik olarak latest.json'a koyar). -->
 
+## 1.7.30
+• Yenilenen indirme listesi: her indirme iki satırda; dosya türü simgesi, kalın dosya adı, altında kategori ve bağlantı sayısı. Durum sütununda her bağlantıyı ayrı gösteren parçalı ilerleme çubuğu
+• Satır düğmeleri: durdur, devam et, klasörü aç, Tekrar Dene ve daha fazla işlem için ⋯ doğrudan satırda
+• Liste İndiriliyor, Bekleyen ve Tamamlanan olarak gruplara ayrılır. İstemezseniz "Diğer" menüsünden ya da sütun başlığına sağ tıklayarak kapatabilirsiniz
+• Sütun başlığına tıklayarak sıralama: gruplar açıkken her grup kendi içinde sıralanır, seçiminiz hatırlanır
+• Pencere ilk açılışta daha geniş (1280x720) açılır
+
 ## 1.7.29
 • Yenilenen ana pencere: üstteki araç çubuğu yerine solda "Yeni İndirme" düğmesi (okundan toplu indirme, torrent ve magnet) ve sade bir yan menü; sağda seçili görünümün başlığı, indirme sayısı ve işlem düğmeleri. Bitenleri Sil, kuyruk ve zamanlayıcı işlemleri "Diğer" menüsünde; açık ve koyu tema renkleri de yenilendi
 • Son Deneme, Açıklama, Eklenme ve Bitiş sütunları artık başta kapalı, dosya adına daha çok yer kalıyor. Sütun başlığına sağ tıklayarak açabilirsiniz (seçim korunur)

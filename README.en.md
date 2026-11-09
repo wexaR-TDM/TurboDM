@@ -54,7 +54,7 @@ Multi-connection downloads · Video grabber · Torrent · Browser integration</p
 - **File verification:** compares the MD5 / SHA-1 / SHA-256 checksum of a downloaded file with the one given by the site.
 - The computer **doesn't go to sleep** while downloading; downloads stopped by connection problems are **retried automatically**.
 - Proxy server, custom browser identity (User-Agent) and site logins (passwords stored with Windows encryption).
-- Toggle the speed limit from the tray in one click; optionally apply it only while the computer is in use. Export/import the list, hide columns, added and finished date columns.
+- Toggle the speed limit from the tray in one click; optionally apply it only while the computer is in use. Export/import the list, hide columns, sort by clicking a header, group the list by status (can be turned off), added and finished date columns.
 - A TurboDM theme that **follows Windows light/dark mode automatically**.
 - One-click update from inside the program (*Help → Check for updates*); active downloads continue where they left off.
 - **7 languages:** English, Türkçe, Deutsch, Français, Español, العربية, Italiano — switch instantly from the **Language** menu in the menu bar (the program stays open); by default the Windows language is used, and the language can also be chosen during setup.

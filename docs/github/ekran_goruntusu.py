@@ -42,6 +42,10 @@ for name, status, mb, frac, speed, cat in rows:
     it = mgr.add_http(f"https://ornek.test/{name}", os.path.join(tmp, "dl", name), start=False)
     it.size, it.status, it.category = mb * 1024 * 1024, status, cat
     it.done_bytes = int(it.size * frac)
+    if 0 < frac < 1:  # bağlantı başına parçalı çubuk görünsün
+        step = it.size // 8
+        it.segments = [[i * step, (i + 1) * step - 1, i * step + int(step * min(1.0, frac * (1.4 - i * 0.1)))]
+                       for i in range(8)]
     it.speed = speed * 1024 * 1024
     it.error = "HTTP 404" if status == "error" else None
 win = MainWindow(mgr)

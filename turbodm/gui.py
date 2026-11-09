@@ -8,13 +8,13 @@ import urllib.parse
 import uuid
 from datetime import datetime
 
-from PySide6.QtCore import QObject, QPointF, QRectF, QSize, Qt, QTime, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QActionGroup, QColor, QDesktopServices, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, QRect, QRectF, QSize, QTime, QTimer, QUrl, Qt, Signal
+from PySide6.QtGui import QAction, QActionGroup, QColor, QDesktopServices, QFont, QFontMetrics, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QFileDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
     QLineEdit, QMainWindow, QMenu, QMenuBar, QMessageBox, QPlainTextEdit, QPushButton, QSizePolicy, QSpinBox, QStyle,
-    QSystemTrayIcon, QTableWidget, QTableWidgetItem, QTabWidget, QTimeEdit, QToolButton,
+    QSystemTrayIcon, QTableWidget, QTableWidgetItem, QTabWidget, QTimeEdit, QToolButton, QToolTip,
     QGroupBox, QProgressBar, QTextBrowser, QStyledItemDelegate, QStyleOptionViewItem,
     QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
@@ -2032,17 +2032,34 @@ class UpdateDialog(QDialog):
 
 # ------------------------------------------------------------------ ana pencere
 COLUMNS = []
+ACTION_TEXT = {}
 
 
 @i18n.on_change
 def _column_texts():
     COLUMNS[:] = ["", _t("Dosya Adı"), _t("Boyut"), _t("Durum"), _t("Kalan Süre"), _t("Aktarım Hızı"), _t("Son Deneme"),
                   _t("Açıklama"), _t("Eklenme"), _t("Bitiş")]
+    ACTION_TEXT.update(play=_t("Devam Et"), pause=_t("Durdur"), folder=_t("Klasörü aç"), retry=_t("Tekrar Dene"),
+                       more=_t("Diğer"))
 SEL = 0    # onay kutusu sütunu (toplu seçim)
 NAME = 1
+SIZE = 2
 STATUS = 3
+ETA = 4
+SPEED = 5
+ACTIONS = 10  # başlıksız son sütun: satırdaki işlem düğmeleri (göster/gizle menüsünde yok)
+ROW_HEIGHT = 56
+GROUP_HEIGHT = 30
+CAT_ICONS = {"compressed": "compressed", "documents": "document", "music": "music", "programs": "program",
+             "video": "video", "torrent": "magnet", "general": "general"}
 PROGRESS_ROLE = Qt.UserRole + 1   # durum hücresi: 0..1 ilerleme (yoksa None)
 TONE_ROLE = Qt.UserRole + 2       # durum hücresi: renk (accent | ok | bad | muted)
+SEG_ROLE = Qt.UserRole + 3        # durum hücresi: (toplam, [(başlangıç, bitiş, konum), ...]) parçalı çubuk için
+DETAIL_ROLE = Qt.UserRole + 4     # durum hücresi: sağdaki miktar yazısı ("317 MB / 512 MB")
+ACTIVE_ROLE = Qt.UserRole + 2     # ad hücresi: iniyor mu (simge zemini vurgulu)
+SUB_ROLE = Qt.UserRole + 3        # ad hücresi: alt satır (kategori, bağlantı sayısı, bitiş zamanı…)
+ACTIONS_ROLE = Qt.UserRole + 3    # işlem hücresi: düğme adları
+GROUP_ROLE = Qt.UserRole + 5      # grup satırı: (başlık, sayı)
 
 
 COUNT_ROLE = Qt.UserRole + 2      # kenar çubuğu: kategorideki indirme sayısı
@@ -2091,12 +2108,27 @@ class NavDelegate(QStyledItemDelegate):
 
 
 class CheckDelegate(QStyledItemDelegate):
-    """Seçim sütunu: temaya göre çizilen, her iki temada da belirgin onay kutusu."""
+    """Seçim sütunu: temaya göre çizilen, her iki temada da belirgin onay kutusu. Grup satırı da bu sütundan
+    bütün satıra yayılır (İndiriliyor, Bekleyen, Tamamlanan)."""
 
     def paint(self, p, option, index):
+        group = index.data(GROUP_ROLE)
+        if group:
+            p.save()
+            r = option.rect
+            p.fillRect(r, QColor(theme.T["bg"]))
+            p.setPen(QColor(theme.T["border_soft"]))
+            p.drawLine(r.bottomLeft(), r.bottomRight())
+            f = QFont(option.font)
+            f.setBold(True)
+            p.setFont(f)
+            p.setPen(QColor(theme.T["muted"]))
+            p.drawText(r.adjusted(14, 0, -14, 0), Qt.AlignLeft | Qt.AlignVCenter, f"{group[0]}   {group[1]}")
+            p.restore()
+            return
         opt = QStyleOptionViewItem(option)
         self.initStyleOption(opt, index)
-        checked = Qt.CheckState(index.data(Qt.CheckStateRole)) == Qt.Checked
+        checked = Qt.CheckState(index.data(Qt.CheckStateRole) or 0) == Qt.Checked
         opt.features &= ~QStyleOptionViewItem.HasCheckIndicator
         opt.text = ""
         style = opt.widget.style() if opt.widget else QApplication.style()
@@ -2122,51 +2154,252 @@ class CheckDelegate(QStyledItemDelegate):
             p.setPen(QPen(QColor(theme.T["muted"]), 1.5))
             p.setBrush(Qt.NoBrush)
             p.drawRoundedRect(box.adjusted(0.75, 0.75, -0.75, -0.75), 3.5, 3.5)
+        if opt.state & QStyle.State_Selected:  # seçili satırın kenarındaki vurgu çizgisi
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(theme.T["accent"]))
+            r = opt.rect
+            p.drawRect(QRectF(r.right() - 2 if opt.direction == Qt.RightToLeft else r.left(), r.top(), 3, r.height()))
         p.restore()
 
 
-class StatusDelegate(QStyledItemDelegate):
-    """Durum sütunu: yazının altında ince, yuvarlatılmış ilerleme çizgisi (inen, duraklatılmış indirmeler);
-    tamamlanan yeşil, hatalı kırmızı yazılır. Renkler temaya göre."""
+class NameDelegate(QStyledItemDelegate):
+    """Dosya adı sütunu: dosya türü simgesi, kalın ad, altında soluk bilgi satırı."""
 
     def paint(self, p, option, index):
         opt = QStyleOptionViewItem(option)
         self.initStyleOption(opt, index)
-        text, opt.text = opt.text, ""
+        text, icon, opt.text, opt.icon = opt.text, QIcon(opt.icon), "", QIcon()
+        opt.features &= ~QStyleOptionViewItem.HasDecoration
+        style = opt.widget.style() if opt.widget else QApplication.style()
+        style.drawControl(QStyle.CE_ItemViewItem, opt, p, opt.widget)  # zemin ve seçim
+        r = opt.rect
+        tile = QStyle.visualRect(opt.direction, r, QRect(r.left() + 2, r.center().y() - 18, 36, 36))
+        text_r = QStyle.visualRect(opt.direction, r, QRect(r.left() + 48, r.top(), max(0, r.width() - 52), r.height()))
+        active = index.data(ACTIVE_ROLE)
+        p.save()
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(theme.T["accent_soft" if active else "surface2"]))
+        p.drawRoundedRect(QRectF(tile), 9, 9)
+        icon.paint(p, tile.adjusted(9, 9, -9, -9))
+        f = QFont(opt.font)
+        f.setBold(True)
+        fm = QFontMetrics(f)
+        sub = index.data(SUB_ROLE) or ""
+        mid = r.center().y()
+        top = QRect(text_r.left(), mid - fm.height() - (0 if sub else -fm.height() // 2), text_r.width(), fm.height())
+        p.setFont(f)
+        p.setPen(QColor(theme.T["text"]))
+        p.drawText(top, Qt.AlignLeft | Qt.AlignVCenter, fm.elidedText(text, Qt.ElideRight, top.width()))
+        if sub:
+            p.setFont(opt.font)
+            p.setPen(QColor(theme.T["muted"]))
+            low = QRect(text_r.left(), mid + 1, text_r.width(), opt.fontMetrics.height())
+            p.drawText(low, Qt.AlignLeft | Qt.AlignVCenter, opt.fontMetrics.elidedText(sub, Qt.ElideRight, low.width()))
+        p.restore()
+
+
+class ActionDelegate(QStyledItemDelegate):
+    """Satırdaki işlem düğmeleri: fare üstündeyken zemin alır, tıklamayı DownloadTable yakalar."""
+
+    BUTTON = 30
+    GAP = 4
+
+    @classmethod
+    def rects(cls, cell, names, fm, direction):
+        """{ad: dikdörtgen}: düğmeler satırın sonuna hizalı, "retry" yazılı düğmedir."""
+        out, x = {}, cell.right() - 8
+        for name in reversed(names):
+            w = fm.horizontalAdvance(ACTION_TEXT.get("retry", "")) + 20 if name == "retry" else cls.BUTTON
+            x -= w
+            r = QRect(x, cell.center().y() - cls.BUTTON // 2, w, cls.BUTTON)
+            out[name] = QStyle.visualRect(direction, cell, r)
+            x -= cls.GAP
+        return out
+
+    def paint(self, p, option, index):
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        opt.text = ""
+        style = opt.widget.style() if opt.widget else QApplication.style()
+        style.drawControl(QStyle.CE_ItemViewItem, opt, p, opt.widget)  # zemin ve seçim
+        hover = getattr(opt.widget, "action_hover", None)
+        p.save()
+        p.setRenderHint(QPainter.Antialiasing)
+        for name, r in self.rects(opt.rect, index.data(ACTIONS_ROLE) or (), opt.fontMetrics, opt.direction).items():
+            on = hover == (index.row(), name)
+            if name == "retry":
+                bad = QColor(theme.T["bad"])
+                bad.setAlpha(60 if on else 32)
+                p.setPen(Qt.NoPen)
+                p.setBrush(bad)
+                p.drawRoundedRect(QRectF(r), 7, 7)
+                f = QFont(opt.font)
+                f.setBold(True)
+                p.setFont(f)
+                p.setPen(QColor(theme.T["bad"]))
+                p.drawText(r, Qt.AlignCenter, ACTION_TEXT.get("retry", ""))
+                continue
+            if on:
+                p.setPen(Qt.NoPen)
+                p.setBrush(QColor(theme.T["surface2"]))
+                p.drawRoundedRect(QRectF(r), 7, 7)
+            theme.icon(name).paint(p, r.adjusted(7, 7, -7, -7))
+        p.restore()
+
+
+class StatusDelegate(QStyledItemDelegate):
+    """Durum sütunu: ilerleme varsa yüzde, miktar ve altında bağlantı başına parçalı çubuk; yoksa simge ve yazı.
+    Tamamlanan yeşil, hatalı kırmızı yazılır. Renkler temaya göre."""
+
+    def paint(self, p, option, index):
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        text, icon, opt.text, opt.icon = opt.text, QIcon(opt.icon), "", QIcon()
+        opt.features &= ~QStyleOptionViewItem.HasDecoration
         style = opt.widget.style() if opt.widget else QApplication.style()
         style.drawControl(QStyle.CE_ItemViewItem, opt, p, opt.widget)  # zemin ve seçim
         frac = index.data(PROGRESS_ROLE)
         tone = index.data(TONE_ROLE) or "text"
         r = opt.rect.adjusted(8, 0, -8, 0)
+        color = QColor(theme.T.get(tone, theme.T["text"]))
+        f = QFont(opt.font)
+        f.setBold(tone in ("accent", "ok", "bad"))
+        fm = QFontMetrics(f)
         p.save()
         p.setRenderHint(QPainter.Antialiasing)
-        text_r = r.adjusted(0, -5 if frac is not None else 0, 0, -5 if frac is not None else 0)
-        p.setPen(QColor(theme.T.get(tone, theme.T["text"])))
+        if frac is None:
+            if not icon.isNull():
+                ic = QStyle.visualRect(opt.direction, r, QRect(r.left(), r.center().y() - 8, 16, 16))
+                icon.paint(p, ic)
+                r = QStyle.visualRect(opt.direction, opt.rect, QRect(r.left() + 22, r.top(), r.width() - 22, r.height()))
+            p.setFont(f)
+            p.setPen(color)
+            p.drawText(r, Qt.AlignVCenter | Qt.AlignLeft, fm.elidedText(text, Qt.ElideRight, r.width()))
+            p.restore()
+            return
+        top = QRect(r.left(), r.center().y() - 15, r.width(), 20)
+        detail = index.data(DETAIL_ROLE) or ""
         p.setFont(opt.font)
-        p.drawText(text_r, Qt.AlignVCenter | Qt.AlignLeft,
-                   opt.fontMetrics.elidedText(text, Qt.ElideRight, text_r.width()))
-        if frac is not None:
-            track = QRectF(r.x(), r.bottom() - 8, r.width(), 4)
-            p.setPen(Qt.NoPen)
-            p.setBrush(QColor(theme.T["track"]))
-            p.drawRoundedRect(track, 2, 2)
-            if frac > 0:
-                done = QRectF(track.x(), track.y(), max(4.0, track.width() * min(1.0, frac)), track.height())
-                p.setBrush(QColor(theme.T["accent"] if tone != "muted" else theme.T["muted"]))
-                p.drawRoundedRect(done, 2, 2)
+        p.setPen(QColor(theme.T["muted"]))
+        p.drawText(top, Qt.AlignVCenter | Qt.AlignRight, detail)
+        used = opt.fontMetrics.horizontalAdvance(detail) + 8 if detail else 0
+        p.setFont(f)
+        p.setPen(color)
+        p.drawText(top, Qt.AlignVCenter | Qt.AlignLeft, fm.elidedText(text, Qt.ElideRight, max(0, top.width() - used)))
+        self._draw_bar(p, QRectF(r.left(), r.center().y() + 8, r.width(), 6), frac, index.data(SEG_ROLE),
+                       theme.T["accent"] if tone in ("accent", "ok") else theme.T["muted"], opt.direction)
         p.restore()
+
+    @staticmethod
+    def _draw_bar(p, bar, frac, segs, color, direction):
+        """Çubuk: bağlantı parçaları biliniyorsa her biri ayrı (aralarında ince boşluk), yoksa tek parça."""
+        total, spans = (segs[0], [(a, b + 1, pos) for a, b, pos in segs[1]]) if segs else (1.0, [(0.0, 1.0, min(1.0, frac))])
+        rtl = direction == Qt.RightToLeft
+        p.setPen(Qt.NoPen)
+        if sum(end - a for a, end, _ in spans) < total:  # HLS yalnız biten parçaları verir: kalanı boş çubuk görünsün
+            p.setBrush(QColor(theme.T["track"]))
+            p.drawRoundedRect(bar, 1.5, 1.5)
+        for a, end, pos in spans:
+            x = bar.left() + a / total * bar.width()
+            w = (end - a) / total * bar.width() - (2 if end < total else 0)
+            if w <= 0:
+                continue
+            filled = min(w, max(0.0, (min(pos, end) - a) / (end - a)) * w)
+            p.setBrush(QColor(theme.T["track"]))
+            p.drawRoundedRect(QRectF(bar.right() - (x - bar.left()) - w if rtl else x, bar.top(), w, bar.height()), 1.5, 1.5)
+            if filled > 0:
+                filled = max(1.5, filled)
+                p.setBrush(QColor(color))
+                p.drawRoundedRect(QRectF(bar.right() - (x - bar.left()) - filled if rtl else x, bar.top(), filled, bar.height()),
+                                  1.5, 1.5)
 
 
 class DownloadTable(QTableWidget):
     """İndirme listesi. Onay kutusu sütununa tıklamak satırı diğer seçimleri bozmadan seçime ekler/çıkarır
-    (dokunmatik ekranda ve Ctrl tuşu bilmeyenler için toplu seçim); kutular seçimi gösterir."""
+    (dokunmatik ekranda ve Ctrl tuşu bilmeyenler için toplu seçim); kutular seçimi gösterir. Satırdaki işlem
+    düğmeleri seçimi değiştirmez; tıklanınca action_clicked(satır, düğme adı) yayınlanır."""
+
+    action_clicked = Signal(int, str)
+
+    def __init__(self, *a):
+        super().__init__(*a)
+        self.action_hover = None
+        self._action_pressed = None
+        self.setMouseTracking(True)
+
+    def _action_at(self, pos):
+        """Bu noktadaki işlem düğmesi: (satır, ad) ya da None."""
+        idx = self.indexAt(pos)
+        if not idx.isValid() or idx.column() != ACTIONS:
+            return None
+        rects = ActionDelegate.rects(self.visualRect(idx), idx.data(ACTIONS_ROLE) or (), self.fontMetrics(),
+                                     self.layoutDirection())
+        return next(((idx.row(), n) for n, r in rects.items() if r.contains(pos)), None)
 
     def selectionCommand(self, index, event=None):
         from PySide6.QtCore import QEvent, QItemSelectionModel
+        if self._action_pressed:  # düğmeye tıklanırken (fare kıpırdasa, bırakılsa da) seçim değişmez
+            return QItemSelectionModel.NoUpdate
         if (index.isValid() and index.column() == SEL and event is not None
                 and event.type() == QEvent.MouseButtonPress):
             return QItemSelectionModel.Toggle | QItemSelectionModel.Rows
         return super().selectionCommand(index, event)
+
+    def _is_group(self, row):
+        cell = self.item(row, SEL)
+        return bool(cell and cell.data(GROUP_ROLE))
+
+    def moveCursor(self, action, modifiers):
+        """Klavye gezinmesi grup satırına düşmez, orada takılmaz: yukarı/aşağı atlar, sayfa tuşları komşusuna gider."""
+        cur = self.currentIndex()
+        step = -1 if action in (QAbstractItemView.MoveUp, QAbstractItemView.MovePageUp) else 1
+        if action in (QAbstractItemView.MoveUp, QAbstractItemView.MoveDown):
+            r = cur.row() + step if cur.isValid() else 0 if step > 0 else self.rowCount() - 1
+            col = cur.column() if cur.isValid() else NAME
+        else:
+            idx = super().moveCursor(action, modifiers)
+            if not idx.isValid():
+                return idx
+            r, col = idx.row(), idx.column()
+        while 0 <= r < self.rowCount() and self._is_group(r):
+            r += step
+        return self.model().index(r, col) if 0 <= r < self.rowCount() else cur
+
+    def mousePressEvent(self, e):
+        self._action_pressed = self._action_at(e.position().toPoint()) if e.button() == Qt.LeftButton else None
+        super().mousePressEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        hit = self._action_pressed
+        super().mouseReleaseEvent(e)
+        self._action_pressed = None
+        if hit and e.button() == Qt.LeftButton and hit == self._action_at(e.position().toPoint()):
+            self.action_clicked.emit(*hit)
+
+    def mouseMoveEvent(self, e):
+        hover = self._action_at(e.position().toPoint())
+        if hover != self.action_hover:
+            self.action_hover = hover
+            self.viewport().update()
+        super().mouseMoveEvent(e)
+
+    def leaveEvent(self, e):
+        if self.action_hover:
+            self.action_hover = None
+            self.viewport().update()
+        super().leaveEvent(e)
+
+    def viewportEvent(self, e):
+        if e.type() == QEvent.Leave and self.action_hover:  # başlığa geçerken tablonun kendi leaveEvent'i gelmez
+            self.action_hover = None
+            self.viewport().update()
+        if e.type() == QEvent.ToolTip:
+            hit = self._action_at(e.pos())
+            if hit:
+                QToolTip.showText(e.globalPos(), ACTION_TEXT.get(hit[1], ""), self.viewport())
+                return True
+        return super().viewportEvent(e)
 
 
 class MainWindow(QMainWindow):
@@ -2176,10 +2409,12 @@ class MainWindow(QMainWindow):
         self.icon = load_icon()
         QApplication.setWindowIcon(self.icon)
         self.setWindowIcon(self.icon)
-        self.resize(1100, 620)
+        area = QApplication.primaryScreen().availableGeometry()
+        self.resize(min(1280, area.width()), min(720, area.height() - 40))  # 40: başlık çubuğu; küçük ekrana da sığsın
         self.setAcceptDrops(True)
         self.progress_dialogs = {}
-        self._visible = []
+        self._visible = []  # filtreye uyan indirmeler
+        self._rows = []     # tablo satırları: indirme kimliği ya da grup satırı (başlık, sayı)
         self._filter = "all"
         self._last_clip = ""
         self._quitting = False
@@ -2239,6 +2474,10 @@ class MainWindow(QMainWindow):
         self.a_sched = self._act(_t("Zamanlayıcı"), "clock", lambda: SchedulerDialog(self, self._current_queue()).exec())
         self.a_qstart = self._act(_t("Kuyruğu Başlat"), "queue_start", lambda: self.mgr.start_queue(self._current_queue()))
         self.a_qstop = self._act(_t("Kuyruğu Durdur"), "queue_stop", lambda: self.mgr.stop_queue(self._current_queue()))
+        self.a_group = QAction(_t("Gruplara ayır"), self)
+        self.a_group.setCheckable(True)
+        self.a_group.setChecked(bool(self.mgr.settings.get("group_list", True)))
+        self.a_group.toggled.connect(self._set_grouping)
         self.a_batch = self._act(_t("Toplu indirme ekle…"), "add", self.batch_add_prompt, "Ctrl+Shift+N")
         self.a_export = self._act(_t("Listeyi dışa aktar…"), None, self.export_list)
         self.a_import = self._act(_t("Listeyi içe aktar…"), None, self.import_list)
@@ -2303,9 +2542,6 @@ class MainWindow(QMainWindow):
         self.tree.setIconSize(QSize(18, 18))
         self.tree.setFocusPolicy(Qt.NoFocus)
         self.tree.setItemDelegate(NavDelegate(self.tree))
-        cat_icons = {"compressed": "compressed", "documents": "document", "music": "music",
-                     "programs": "program", "video": "video", "torrent": "magnet", "general": "general"}
-
         def nav_item(text, key, ic):
             it = QTreeWidgetItem([text])
             it.setData(0, Qt.UserRole, key)
@@ -2325,25 +2561,26 @@ class MainWindow(QMainWindow):
         head.setFlags(Qt.NoItemFlags)
         self.tree.addTopLevelItem(head)
         for key, (disp, _, _) in CATEGORIES.items():
-            self.tree.addTopLevelItem(nav_item(disp, "cat:" + key, cat_icons.get(key, "general")))
+            self.tree.addTopLevelItem(nav_item(disp, "cat:" + key, CAT_ICONS.get(key, "general")))
         self.tree.expandAll()
         self.tree.setItemsExpandable(False)
         self.tree.setCurrentItem(root)
         self.tree.currentItemChanged.connect(self._filter_changed)
 
-        self.table = DownloadTable(0, len(COLUMNS))
+        self.table = DownloadTable(0, ACTIONS + 1)
         self.table.setObjectName("list")
         self.table.setItemDelegateForColumn(SEL, CheckDelegate(self.table))
+        self.table.setItemDelegateForColumn(NAME, NameDelegate(self.table))
         self.table.setItemDelegateForColumn(STATUS, StatusDelegate(self.table))
+        self.table.setItemDelegateForColumn(ACTIONS, ActionDelegate(self.table))
+        self.table.action_clicked.connect(self._row_action)
         self.table.setIconSize(QSize(18, 18))
-        self.table.setHorizontalHeaderLabels(COLUMNS)
+        self.table.setHorizontalHeaderLabels(COLUMNS + [""])
         self.table.horizontalHeaderItem(SEL).setToolTip(_t("Tümünü seç / seçimi kaldır"))
         # başlığa tıklamak sütunu (satır seçiminde bütün listeyi) seçmesin; yalnızca kutu başlığı seçim yapar
         self.table.horizontalHeader().sectionPressed.disconnect()
         self.table.horizontalHeader().setHighlightSections(False)
-        self.table.horizontalHeader().sectionClicked.connect(
-            lambda c: (self.table.clearSelection() if len(self.selected_ids()) == len(self._visible)
-                       else self.select_all()) if c == SEL else None)
+        self.table.horizontalHeader().sectionClicked.connect(self._header_clicked)
         self.table.itemSelectionChanged.connect(self._selection_changed)
         for a in (self.a_select_all, self.a_select_none):  # kısayollar liste odaktayken çalışsın
             a.setShortcutContext(Qt.WidgetWithChildrenShortcut)
@@ -2354,15 +2591,24 @@ class MainWindow(QMainWindow):
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setShowGrid(False)
         self.table.setWordWrap(False)
-        self.table.verticalHeader().setDefaultSectionSize(34)
+        self.table.verticalHeader().setDefaultSectionSize(ROW_HEIGHT)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._context_menu)
         self.table.doubleClicked.connect(self._double_click)
         h = self.table.horizontalHeader()
         h.setSectionResizeMode(NAME, QHeaderView.Stretch)
         h.setSectionResizeMode(SEL, QHeaderView.Fixed)
-        for c, w in ((SEL, 30), (2, 90), (3, 150), (4, 90), (5, 125), (6, 130), (7, 150), (8, 130), (9, 130)):
-            self.table.setColumnWidth(c, w)
+        h.setSectionResizeMode(ACTIONS, QHeaderView.Fixed)
+        for c, w in ((SEL, 40), (SIZE, 85), (STATUS, 235), (ETA, 95), (SPEED, 105), (6, 130), (7, 150), (8, 130),
+                     (9, 130), (ACTIONS, 125)):
+            self.table.setColumnWidth(c, max(w, h.sectionSizeHint(c)) if c in (SIZE, ETA, SPEED) else w)  # uzun başlık kırpılmasın
+        retry = self.table.fontMetrics().horizontalAdvance(ACTION_TEXT.get("retry", "")) + 20  # uzun çeviri sütundan taşmasın
+        self.table.setColumnWidth(ACTIONS, max(125, retry + ActionDelegate.BUTTON + ActionDelegate.GAP + 16))
+        h.moveSection(h.visualIndex(SPEED), h.visualIndex(ETA))  # sıra: hız, kalan süre
+        for c in range(NAME, ACTIONS):
+            right = c in (SIZE, ETA, SPEED)
+            self.table.horizontalHeaderItem(c).setTextAlignment((Qt.AlignRight if right else Qt.AlignLeft) | Qt.AlignVCenter)
+        self._update_sort_indicator()
         # sütun başlığına sağ tık: sütunları göster/gizle (seçim ve dosya adı her zaman görünür)
         h.setContextMenuPolicy(Qt.CustomContextMenu)
         h.customContextMenuRequested.connect(self._column_menu)
@@ -2467,7 +2713,7 @@ class MainWindow(QMainWindow):
         self._more_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self._more_btn.setPopupMode(QToolButton.InstantPopup)
         menu = QMenu(self._more_btn)
-        for a in (self.a_delete_done, None, self.a_qstart, self.a_qstop, self.a_sched):
+        for a in (self.a_delete_done, None, self.a_qstart, self.a_qstop, self.a_sched, None, self.a_group):
             menu.addSeparator() if a is None else menu.addAction(a)
         self._more_btn.setMenu(menu)
         head.addWidget(self._more_btn)
@@ -2557,7 +2803,7 @@ class MainWindow(QMainWindow):
 
     def selected_ids(self):
         rows = sorted({i.row() for i in self.table.selectedIndexes()})
-        return [self._visible[r] for r in rows if r < len(self._visible)]
+        return [self._rows[r] for r in rows if r < len(self._rows) and isinstance(self._rows[r], str)]
 
     # ---------------------------------------------------------- toplu seçim
     SELECT_PRESETS = ((_t("Bitmemişleri seç"), lambda it: it.status not in ("completed", "seeding")),
@@ -2577,13 +2823,13 @@ class MainWindow(QMainWindow):
 
     def select_where(self, pred):
         """Listede görünenlerden koşula uyanları seç (önceki seçim yerine)."""
-        self._select_rows([r for r, iid in enumerate(self._visible) if pred(self.mgr.items[iid])])
+        self._select_rows([r for r, iid in enumerate(self._rows) if isinstance(iid, str) and pred(self.mgr.items[iid])])
 
     def _select_rows(self, rows):
         # selectRow() her çağrıda önceki seçimi siler (çoklu seçim kaybolurdu): seçim tek seferde kurulur
         from PySide6.QtCore import QItemSelection, QItemSelectionModel
         sel = QItemSelection()
-        last = len(COLUMNS) - 1
+        last = self.table.columnCount() - 1
         for r in rows:
             sel.select(self.table.model().index(r, 0), self.table.model().index(r, last))
         self.table.blockSignals(True)
@@ -2596,36 +2842,167 @@ class MainWindow(QMainWindow):
         for r in range(self.table.rowCount()):
             cell = self.table.item(r, SEL)
             state = Qt.Checked if r in sel else Qt.Unchecked
-            if cell and cell.checkState() != state:
+            if cell and not cell.data(GROUP_ROLE) and cell.checkState() != state:
                 cell.setCheckState(state)
         n, total = len(sel), len(self._visible)
         head = self.table.horizontalHeaderItem(SEL)
         head.setText("☑" if total and n == total else "☐")
         if n > 1:
-            size = sum(self.mgr.items[self._visible[r]].size or 0 for r in sel if r < len(self._visible))
+            size = sum(self.mgr.items[i].size or 0 for i in self.selected_ids())
             self.sel_lbl.setText(_t("{0} indirme seçili ({1})  ").format(n, fmt_size(size)))
         else:
             self.sel_lbl.setText("")
 
     def refresh(self, force=False):
         self._update_nav_counts()
-        ids = [i for i in self.mgr.order if self._match(self.mgr.items[i])]
-        if force or ids != self._visible:
+        ids = self._sorted_ids([i for i in self.mgr.order if self._match(self.mgr.items[i])])
+        rows = self._layout_rows(ids)
+        self._visible = ids
+        if force or rows != self._rows:
             sel = set(self.selected_ids())
-            self._visible = ids
-            self.table.setRowCount(len(ids))
-            for r in range(len(ids)):
-                for c in range(len(COLUMNS)):
-                    if not self.table.item(r, c):
-                        cell = QTableWidgetItem()
-                        if c == SEL:  # kutu seçimi gösterir; tıklama DownloadTable'da seçimi değiştirir
-                            cell.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
-                            cell.setCheckState(Qt.Unchecked)
-                        self.table.setItem(r, c, cell)
-            self._select_rows([r for r, iid in enumerate(ids) if iid in sel])
-        for r, iid in enumerate(self._visible):
-            self._update_row(r, self.mgr.items[iid])
+            self._rebuild_rows(rows)
+            self._select_rows([r for r, iid in enumerate(rows) if iid in sel])
+        for r, iid in enumerate(self._rows):
+            if isinstance(iid, str):
+                self._update_row(r, self.mgr.items[iid])
         self._update_page_head()
+
+    def _layout_rows(self, ids):
+        """Tablo satırları: gruplama açıksa her grubun başında (başlık, sayı) satırı; boş grup gösterilmez."""
+        if not self.mgr.settings.get("group_list", True):
+            return list(ids)
+        groups = (("downloading connecting converting", _t("İndiriliyor")), ("queued stopped error", _t("Bekleyen")),
+                  ("completed seeding", _t("Tamamlanan")))
+        rows = []
+        for statuses, title in groups:
+            members = [i for i in ids if self.mgr.items[i].status in statuses.split()]
+            if members:
+                rows.append((title, len(members)))
+                rows.extend(members)
+        known = {r for r in rows if isinstance(r, str)}
+        rows.extend(i for i in ids if i not in known)  # bilinmeyen durum listeden kaybolmasın
+        return rows
+
+    def _rebuild_rows(self, rows):
+        from PySide6.QtCore import QItemSelectionModel
+        t = self.table
+        scroll = t.verticalScrollBar().value()
+        cur = t.currentIndex()
+        cur_id = self._rows[cur.row()] if 0 <= cur.row() < len(self._rows) else None
+        pressed = t._action_pressed
+        if pressed and rows[pressed[0]:pressed[0] + 1] != self._rows[pressed[0]:pressed[0] + 1]:
+            t._action_pressed = None  # basılan düğmenin satırına başka indirme geldi: bırakınca ona uygulanmasın
+        t.clearSpans()
+        t.clearContents()
+        t.setRowCount(len(rows))
+        self._rows = rows
+        for r, iid in enumerate(rows):
+            if not isinstance(iid, str):  # grup satırı: seçilemez, bütün satıra yayılır
+                cell = QTableWidgetItem()
+                cell.setFlags(Qt.NoItemFlags)
+                cell.setData(GROUP_ROLE, iid)
+                t.setItem(r, SEL, cell)
+                t.setSpan(r, SEL, 1, t.columnCount())
+                t.setRowHeight(r, GROUP_HEIGHT)
+                continue
+            t.setRowHeight(r, ROW_HEIGHT)
+            for c in range(t.columnCount()):
+                cell = QTableWidgetItem()
+                if c == SEL:  # kutu seçimi gösterir; tıklama DownloadTable'da seçimi değiştirir
+                    cell.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                    cell.setCheckState(Qt.Unchecked)
+                elif c in (SIZE, ETA, SPEED):
+                    cell.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                t.setItem(r, c, cell)
+            f = t.item(r, SPEED).font()
+            f.setBold(True)
+            t.item(r, SPEED).setFont(f)
+        if isinstance(cur_id, str) and cur_id in rows:  # klavye konumu ve Shift ile seçimin başlangıcı kaybolmasın
+            t.setAutoScroll(False)  # liste geçerli hücreye kaymasın
+            t.selectionModel().setCurrentIndex(t.model().index(rows.index(cur_id), cur.column()), QItemSelectionModel.NoUpdate)
+            t.setAutoScroll(True)
+        t.verticalScrollBar().setValue(scroll)
+
+    SORT_KEYS = {
+        NAME: lambda it: it.filename.casefold(),
+        SIZE: lambda it: it.size or 0,
+        STATUS: lambda it: (it.status, (it.done_bytes / it.size) if it.size else 0),
+        ETA: lambda it: (it.size - it.done_bytes) / it.speed if it.size and it.speed > 1 else float("inf"),
+        SPEED: lambda it: it.speed or 0,
+        6: lambda it: it.last_try or 0,
+        7: lambda it: (it.description or "").casefold(),
+        8: lambda it: it.added or 0,
+        9: lambda it: it.extra.get("finished_at") or 0,
+    }
+
+    def _sort_state(self):
+        s = self.mgr.settings.get("list_sort")
+        return s if isinstance(s, list) and len(s) == 2 and type(s[0]) is int and s[0] in self.SORT_KEYS else None
+
+    def _sorted_ids(self, ids):
+        s = self._sort_state()
+        if not s:
+            return ids
+        # hız ve kalan süre sürekli değişir: satırlar fare altından kaymasın diye en çok 3 sn'de bir sıralanır
+        live, now = s[0] in (ETA, SPEED), time.monotonic()
+        last = getattr(self, "_live_sort", None)
+        if live and last and last[0] == tuple(s) and set(last[1]) == set(ids) and now - last[2] < 3:
+            return list(last[1])
+        key = self.SORT_KEYS[s[0]]
+        out = sorted(ids, key=lambda i: key(self.mgr.items[i]), reverse=not s[1])
+        self._live_sort = (tuple(s), out, now) if live else None
+        return out
+
+    def _update_sort_indicator(self):
+        h = self.table.horizontalHeader()
+        s = self._sort_state()
+        h.setSortIndicatorShown(bool(s))
+        if s:
+            h.setSortIndicator(s[0], Qt.AscendingOrder if s[1] else Qt.DescendingOrder)
+
+    def _header_clicked(self, c):
+        """Kutu başlığı: tümünü seç/kaldır. Diğer başlıklar: artan, azalan, sonra eklenme sırası."""
+        self._update_sort_indicator()  # Qt her tıkta göstergeyi tıklanan sütuna taşır
+        if c == SEL:
+            if len(self.selected_ids()) == len(self._visible):
+                self.table.clearSelection()
+            else:
+                self.select_all()
+            return
+        if c not in self.SORT_KEYS:
+            return
+        s = self._sort_state()
+        self.mgr.settings["list_sort"] = [c, True] if not s or s[0] != c else [c, False] if s[1] else None
+        self._live_sort = None
+        self.mgr.save()
+        self._update_sort_indicator()
+        self.refresh()
+
+    def _set_grouping(self, on):
+        self.mgr.settings["group_list"] = bool(on)
+        self.mgr.save()
+        self.refresh(force=True)
+
+    def _row_action(self, row, name):
+        """Satırdaki düğme: yalnızca o satırı etkiler; "Diğer" o satırın sağ tık menüsünü açar."""
+        iid = self._rows[row] if row < len(self._rows) else None
+        it = self.mgr.items.get(iid) if isinstance(iid, str) else None
+        if it is None:
+            return
+        if name in ("play", "retry"):
+            self.mgr.start(iid)
+            if name == "retry":
+                self.show_progress(iid)
+        elif name == "pause":
+            self.mgr.stop(iid)
+        elif name == "folder":
+            open_folder(self._item_path(it))
+        elif name == "more":
+            if iid not in self.selected_ids():
+                self._select_rows([row])
+            cell = self.table.visualRect(self.table.model().index(row, ACTIONS))
+            self._context_menu(cell.bottomRight() - QPoint(cell.width() // 4, cell.height() // 4))
+        self.refresh()
 
     def _smoothed(self, it):
         """İnen indirmenin akıcı gösterilen (indirilen, hız) değerleri; diğerlerinde gerçek değerler."""
@@ -2641,8 +3018,8 @@ class MainWindow(QMainWindow):
         """Saniyede ~20 kez: yalnızca inmekte olan satırların yüzdesi, ilerleme çizgisi ve hızı (akıcı)."""
         if not self.isVisible() or self.isMinimized():
             return
-        for r, iid in enumerate(self._visible):
-            it = self.mgr.items.get(iid)
+        for r, iid in enumerate(self._rows):
+            it = self.mgr.items.get(iid) if isinstance(iid, str) else None
             if it and it.status in ("downloading", "connecting") and r < self.table.rowCount():
                 self._update_row(r, it)
 
@@ -2660,8 +3037,9 @@ class MainWindow(QMainWindow):
                 st += f" ({fmt_pct(it.done_bytes / it.size * 100, 1)})"
         if it.kind == "torrent" and it.status in ("downloading", "seeding"):
             st += _t("  ·  {0} eş").format(it.peers)
-        frac = (done / it.size if it.size and it.status in ("downloading", "connecting", "stopped",
-                                                                     "queued", "error") else None)
+        frac = (done / it.size if it.size and it.status in ("downloading", "connecting", "stopped", "queued") else None)
+        if it.status == "queued" and not done:
+            frac = None  # henüz başlamadı: boş çubuk yerine simge ve yazı
         tone = {"completed": "ok", "seeding": "ok", "error": "bad", "downloading": "accent",
                 "converting": "accent"}.get(
             it.status, "muted" if it.status in ("stopped", "queued") else "text")
@@ -2669,6 +3047,12 @@ class MainWindow(QMainWindow):
         if sc.data(PROGRESS_ROLE) != frac or sc.data(TONE_ROLE) != tone:
             sc.setData(PROGRESS_ROLE, frac)
             sc.setData(TONE_ROLE, tone)
+        segs = self._bar_segments(it) if frac is not None else None
+        if sc.data(SEG_ROLE) != segs:
+            sc.setData(SEG_ROLE, segs)
+        detail = f"{fmt_size(done)} / {fmt_size(it.size)}" if frac is not None else ""
+        if sc.data(DETAIL_ROLE) != detail:
+            sc.setData(DETAIL_ROLE, detail)
         stamp = lambda t: datetime.fromtimestamp(t).strftime("%d.%m.%Y %H:%M") if t else ""  # noqa: E731
         eta = (it.size - done) / speed if it.size and speed > 1 and it.status == "downloading" else None
         vals = (it.filename, fmt_size(it.size) if it.size else "", st, fmt_time(eta),
@@ -2679,9 +3063,60 @@ class MainWindow(QMainWindow):
             if cell.text() != v:
                 cell.setText(v)
         cell0 = self.table.item(r, NAME)
-        if cell0.data(Qt.UserRole) != it.kind + it.status:
-            cell0.setData(Qt.UserRole, it.kind + it.status)
-            cell0.setIcon(self._status_icon(it))
+        state = f"{it.kind}{it.status}{it.category}"
+        if cell0.data(Qt.UserRole) != state:
+            cell0.setData(Qt.UserRole, state)
+            cell0.setIcon(theme.icon("magnet" if it.kind == "torrent" else CAT_ICONS.get(it.category, "general")))
+            cell0.setData(ACTIVE_ROLE, it.status in ("downloading", "connecting", "converting"))
+            sc.setIcon(self._status_icon(it))
+            self.table.item(r, ACTIONS).setData(ACTIONS_ROLE, self._row_actions(it))
+        sub = self._row_subtitle(it, stamp)
+        if cell0.data(SUB_ROLE) != sub:
+            cell0.setData(SUB_ROLE, sub)
+
+    @staticmethod
+    def _bar_segments(it):
+        """Parçalı çubuk verisi; bilinmiyorsa, parça çok fazlaysa ya da kayıt bozuksa None (tek parça çizilir)."""
+        task = it.task
+        if task is not None and hasattr(task, "bar_data"):
+            total, segs = task.bar_data()
+        elif it.kind == "http":
+            total, segs = it.size, it.segments
+        else:
+            return None
+        try:
+            if not total or not segs or len(segs) > 32:
+                return None
+            out = sorted((int(a), int(b), int(pos)) for a, b, pos in segs)
+            return (total, out) if all(0 <= a <= b < total for a, b, _ in out) else None
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _row_actions(it):
+        if it.status in ("downloading", "connecting", "seeding"):
+            return ("pause", "more")
+        if it.status == "completed":
+            return ("folder", "more")
+        if it.status == "error":
+            return ("retry", "more")
+        if it.status == "converting":
+            return ("more",)
+        return ("play", "more")
+
+    @staticmethod
+    def _row_subtitle(it, stamp):
+        cat = CATEGORIES.get(it.category)
+        parts = [cat[0]] if cat else []
+        if it.status == "downloading" and it.task is not None and hasattr(it.task, "connections_snapshot"):
+            n = len(it.task.connections_snapshot())
+            if n:
+                parts.append(_t("{0} bağlantı").format(n))
+        elif it.status == "stopped" and it.done_bytes and it.resumable:
+            parts.append(_t("kaldığı yerden sürer"))
+        elif it.status == "completed" and it.extra.get("finished_at"):
+            parts.append(stamp(it.extra["finished_at"]))
+        return " · ".join(parts)
 
     def _status_icon(self, it):
         return theme.status_icon(it.status)
@@ -3127,9 +3562,10 @@ class MainWindow(QMainWindow):
         return it.path if it.kind != "torrent" else os.path.join(it.path, it.name)
 
     def _double_click(self, idx):
-        if idx.row() >= len(self._visible):
+        iid = self._rows[idx.row()] if idx.row() < len(self._rows) else None
+        if not isinstance(iid, str) or idx.column() == ACTIONS:
             return
-        it = self.mgr.items[self._visible[idx.row()]]
+        it = self.mgr.items[iid]
         if it.status == "completed":
             open_path(self._item_path(it))
         else:
@@ -3243,9 +3679,9 @@ class MainWindow(QMainWindow):
                 if it.data(0, Qt.UserRole) == filt:
                     self.tree.setCurrentItem(it)
         self._filter = self.tree.currentItem().data(0, Qt.UserRole)  # seçili kuyruk silindiyse "Tüm İndirmeler"e dön
-        self._visible = []
+        self._visible, self._rows = [], []
         self.refresh(force=True)
-        self._select_rows([r for r, iid in enumerate(self._visible) if iid in sel])
+        self._select_rows([r for r, iid in enumerate(self._rows) if iid in sel])
         for iid, d in list(self.progress_dialogs.items()):  # açık indirme pencereleri yeni dille
             pos = d.pos()
             self.progress_dialogs.pop(iid, None)
@@ -3293,6 +3729,8 @@ class MainWindow(QMainWindow):
             a.setCheckable(True)
             a.setChecked(c not in hidden)
             a.toggled.connect(lambda on, col=c: self._set_column(col, on))
+        m.addSeparator()
+        m.addAction(self.a_group)
         m.exec(self.table.horizontalHeader().mapToGlobal(pos))
 
     def _set_column(self, col, visible):

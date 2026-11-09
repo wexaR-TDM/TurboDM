@@ -217,6 +217,8 @@ class GuiTests(unittest.TestCase):
         win, t = self.win, self.win.table
         for iid in list(win.mgr.order):  # önceki testlerin kayıtları
             win.mgr.remove(iid, False)
+        win.a_group.setChecked(False)  # satır numaraları grup satırları olmadan
+        self.addCleanup(win.a_group.setChecked, True)
         d = os.path.join(TMP, "toplu")
         items = [win.mgr.add_http(self.s.url(f"/t{i}.bin"), os.path.join(d, f"t{i}.bin"), start=False)
                  for i in range(4)]
@@ -580,7 +582,7 @@ class GuiTests(unittest.TestCase):
         self.addCleanup(lambda: it.id in win.mgr.items and win.mgr.remove(it.id))
         win.tree.setCurrentItem(win.tree.topLevelItem(0))
         win.refresh(force=True)
-        row = win._visible.index(it.id)
+        row = win._rows.index(it.id)
         win.table.clearSelection()
         try:
             for mode in ("dark", "light"):
@@ -597,6 +599,400 @@ class GuiTests(unittest.TestCase):
                 self.assertGreater(diff, 60, f"{mode}: kutu kenarı zeminden ayrılmıyor ({ratio})")
         finally:
             G.theme.apply(APP, "auto")
+
+    def _list_items(self):
+        """Dört durumda indirme; listeyi temiz başlatır."""
+        win = self.win
+        for iid in list(win.mgr.order):
+            win.mgr.remove(iid, False)
+        d = os.path.join(TMP, "liste")
+        items = {}
+        for name, status in (("b.bin", "completed"), ("a.bin", "stopped"), ("d.bin", "downloading"), ("c.bin", "error")):
+            it = win.mgr.add_http(self.s.url("/" + name), os.path.join(d, name), start=False)
+            it.status, it.size, it.done_bytes = status, 1000, 400 if status != "completed" else 1000
+            it.error = "HTTP 404" if status == "error" else None
+            items[status] = it
+        win.tree.setCurrentItem(win.tree.topLevelItem(0))
+        win.a_group.setChecked(True)
+        win.mgr.settings["list_sort"] = None
+        win.refresh(force=True)
+        pump(0.1)
+
+        def restore():
+            items["downloading"].status = "stopped"
+            win.mgr.settings["list_sort"] = None
+            win._update_sort_indicator()
+            win.a_group.setChecked(True)
+            for iid in list(win.mgr.order):
+                win.mgr.remove(iid, False)
+            win.refresh(force=True)
+        self.addCleanup(restore)
+        return items
+
+    def test_list_grouping_can_be_turned_off(self):
+        win, t = self.win, self.win.table
+        items = self._list_items()
+        titles = [r[0] for r in win._rows if not isinstance(r, str)]
+        self.assertEqual(titles, ["İndiriliyor", "Bekleyen", "Tamamlanan"])
+        self.assertEqual(win._rows[0], ("İndiriliyor", 1))
+        self.assertEqual(win._rows[1], items["downloading"].id)
+        self.assertEqual(win._rows[3:5], [items["stopped"].id, items["error"].id])
+        # grup satırı seçilemez; tümünü seç yalnızca indirmeleri alır, sayılar doğru kalır
+        win.select_all()
+        self.assertEqual(sorted(win.selected_ids()), sorted(i.id for i in items.values()))
+        self.assertEqual(t.rowHeight(0), G.GROUP_HEIGHT)
+        self.assertEqual(t.columnSpan(0, 0), t.columnCount())
+        self.assertEqual(t.rowHeight(1), G.ROW_HEIGHT)
+        self.assertEqual(win.page_sub.text(), "4 indirme, 1 tanesi etkin")
+        # durum değişince indirme grubunu değiştirir, seçim korunur
+        win._select_rows([win._rows.index(items["downloading"].id)])
+        items["downloading"].status = "completed"
+        win.refresh()
+        self.assertEqual(win.selected_ids(), [items["downloading"].id])
+        self.assertNotIn("İndiriliyor", [r[0] for r in win._rows if not isinstance(r, str)])
+        items["downloading"].status = "downloading"
+        # kapatılınca grup satırı kalmaz, ayar kaydedilir, seçim korunur
+        win.a_group.setChecked(False)
+        self.assertFalse(win.mgr.settings["group_list"])
+        self.assertTrue(all(isinstance(r, str) for r in win._rows))
+        self.assertEqual(len(win._rows), 4)
+        self.assertEqual(win.selected_ids(), [items["downloading"].id])
+        self.assertEqual(t.columnSpan(0, 0), 1)
+        win.a_group.setChecked(True)
+        self.assertTrue(win.mgr.settings["group_list"])
+
+    def test_header_click_sorts_inside_groups(self):
+        win, t = self.win, self.win.table
+        items = self._list_items()
+        extra = win.mgr.add_http(self.s.url("/0.bin"), os.path.join(TMP, "liste", "0.bin"), start=False)
+        extra.status = "stopped"
+        win.refresh(force=True)
+        waiting = lambda: [win.mgr.items[r].filename for r in win._rows  # noqa: E731
+                           if isinstance(r, str) and win.mgr.items[r].status in ("stopped", "error")]
+        default = waiting()
+        h = t.horizontalHeader()
+        h.sectionClicked.emit(G.NAME)
+        self.assertEqual(waiting(), sorted(default))
+        self.assertEqual(win.mgr.settings["list_sort"], [G.NAME, True])
+        self.assertTrue(h.isSortIndicatorShown())
+        self.assertEqual(win._rows[0][0], "İndiriliyor")  # gruplar yerinde kalır
+        h.sectionClicked.emit(G.NAME)
+        self.assertEqual(waiting(), sorted(default, reverse=True))
+        h.sectionClicked.emit(G.NAME)  # üçüncü tık: eklenme sırası
+        self.assertEqual(waiting(), default)
+        self.assertIsNone(win.mgr.settings["list_sort"])
+        self.assertFalse(h.isSortIndicatorShown())
+        # işlem sütunu sıralamaz; bozuk kayıtlı ayar yok sayılır
+        h.sectionClicked.emit(G.ACTIONS)
+        self.assertIsNone(win.mgr.settings["list_sort"])
+        win.mgr.settings["list_sort"] = ["x", 1]
+        win.refresh(force=True)
+        self.assertEqual(waiting(), default)
+        win.mgr.settings["list_sort"] = None
+        # sıralama listeyi değiştirmez, yalnızca görünümü: kuyruk sırası korunur
+        order = list(win.mgr.order)
+        h.sectionClicked.emit(G.SIZE)
+        self.assertEqual(win.mgr.order, order)
+
+    def test_row_buttons_act_without_changing_selection(self):
+        from PySide6.QtCore import Qt as QtC
+        from PySide6.QtTest import QTest
+        win, t = self.win, self.win.table
+        items = self._list_items()
+        pump(0.1)
+
+        def click(it, name):
+            row = win._rows.index(it.id)
+            cell = t.visualRect(t.model().index(row, G.ACTIONS))
+            r = G.ActionDelegate.rects(cell, t.item(row, G.ACTIONS).data(G.ACTIONS_ROLE), t.fontMetrics(),
+                                       t.layoutDirection())[name]
+            QTest.mouseClick(t.viewport(), QtC.LeftButton, QtC.NoModifier, r.center())
+            pump(0.05)
+        stopped, active, failed, done = (items[k] for k in ("stopped", "downloading", "error", "completed"))
+        self.assertEqual(G.MainWindow._row_actions(active), ("pause", "more"))
+        self.assertEqual(G.MainWindow._row_actions(stopped), ("play", "more"))
+        self.assertEqual(G.MainWindow._row_actions(failed), ("retry", "more"))
+        self.assertEqual(G.MainWindow._row_actions(done), ("folder", "more"))
+        win._select_rows([win._rows.index(done.id)])
+        with mock.patch.object(win.mgr, "start") as start, mock.patch.object(win.mgr, "stop") as stop, \
+                mock.patch.object(win, "show_progress") as prog, mock.patch.object(G, "open_folder") as folder, \
+                mock.patch.object(win, "_context_menu") as menu:
+            click(stopped, "play")
+            start.assert_called_once_with(stopped.id)
+            prog.assert_not_called()
+            click(active, "pause")
+            stop.assert_called_once_with(active.id)
+            click(failed, "retry")
+            start.assert_called_with(failed.id)
+            prog.assert_called_once_with(failed.id)
+            click(done, "folder")
+            folder.assert_called_once()
+            self.assertEqual(win.selected_ids(), [done.id])  # düğmeler seçimi değiştirmedi
+            click(stopped, "more")  # "Diğer" o satırın menüsünü açar: satır seçilir
+            menu.assert_called_once()
+            self.assertEqual(win.selected_ids(), [stopped.id])
+            # boş alana tıklamak ve çift tıklama düğme gibi davranmaz
+            start.reset_mock()
+            prog.reset_mock()
+            row = win._rows.index(stopped.id)
+            win._double_click(t.model().index(row, G.ACTIONS))
+            prog.assert_not_called()
+            win._double_click(t.model().index(0, G.SEL))  # grup satırı
+            prog.assert_not_called()
+
+    def test_row_shows_type_subtitle_and_connection_bar(self):
+        win, t = self.win, self.win.table
+        items = self._list_items()
+        stopped, active = items["stopped"], items["downloading"]
+        stopped.category = "video"
+        stopped.resumable = True
+        stopped.segments = [[0, 499, 300], [500, 999, 600]]
+        win.refresh(force=True)
+        row = win._rows.index(stopped.id)
+        self.assertEqual(t.item(row, G.NAME).data(G.SUB_ROLE), "Video · kaldığı yerden sürer")
+        self.assertFalse(t.item(row, G.NAME).icon().isNull())
+        self.assertEqual(t.item(row, G.STATUS).data(G.SEG_ROLE), (1000, [(0, 499, 300), (500, 999, 600)]))
+        self.assertIn("/", t.item(row, G.STATUS).data(G.DETAIL_ROLE))
+        # bilinmeyen parça yoksa ya da çok fazlaysa tek parça çizilir
+        stopped.segments = [[i, i, i] for i in range(40)]
+        self.assertIsNone(win._bar_segments(stopped))
+        stopped.segments = [[0, 499, 300], [500, 999, 600]]
+        # hatalı indirmede çubuk yok, simge ve yazı var
+        row = win._rows.index(items["error"].id)
+        self.assertIsNone(t.item(row, G.STATUS).data(G.PROGRESS_ROLE))
+        self.assertFalse(t.item(row, G.STATUS).icon().isNull())
+        # iki temada ve sağdan solda çizim hata vermez, tür simgesi ve çubuk gerçekten çizilir
+        accent = lambda: G.QColor(G.theme.T["accent"]).rgb()  # noqa: E731
+        try:
+            for mode in ("dark", "light"):
+                G.theme.apply(APP, mode)
+                pump(0.05)
+                row = win._rows.index(active.id)
+                rect = t.visualRect(t.model().index(row, G.STATUS))
+                img = t.viewport().grab(rect).toImage()
+                found = any(img.pixel(x, y) == accent() for x in range(img.width()) for y in range(img.height()))
+                self.assertTrue(found, f"{mode}: çubuk çizilmedi")
+                row = win._rows.index(stopped.id)
+                rect = t.visualRect(t.model().index(row, G.NAME))
+                img = t.viewport().grab(rect).toImage()
+                tile = {img.pixel(x, y) for x in range(12, 34) for y in range(img.height() // 2 - 8, img.height() // 2 + 8)}
+                self.assertGreater(len(tile), 3, f"{mode}: tür simgesi çizilmedi")
+            t.setLayoutDirection(G.Qt.RightToLeft)
+            t.viewport().grab()
+        finally:
+            t.setLayoutDirection(G.Qt.LayoutDirectionAuto)
+            G.theme.apply(APP, "auto")
+
+    def _button_center(self, row, name):
+        t = self.win.table
+        cell = t.visualRect(t.model().index(row, G.ACTIONS))
+        return G.ActionDelegate.rects(cell, t.item(row, G.ACTIONS).data(G.ACTIONS_ROLE), t.fontMetrics(),
+                                      t.layoutDirection())[name].center()
+
+    def test_row_button_never_changes_multi_selection(self):
+        from PySide6.QtCore import QEvent, QPoint, QPointF, Qt as QtC
+        from PySide6.QtGui import QMouseEvent
+        from PySide6.QtTest import QTest
+        win, t = self.win, self.win.table
+        items = self._list_items()
+        a, b = items["stopped"], items["error"]
+        rows = [win._rows.index(a.id), win._rows.index(b.id)]
+        win._select_rows(rows)
+        with mock.patch.object(win.mgr, "start"):
+            QTest.mouseClick(t.viewport(), QtC.LeftButton, QtC.NoModifier, self._button_center(rows[0], "play"))
+        pump(0.02)
+        self.assertEqual(sorted(win.selected_ids()), sorted([a.id, b.id]))
+        # tıklarken fare biraz kıpırdasa da seçim değişmez
+        p = self._button_center(rows[0], "more")
+        send = lambda tp, pos, btn, btns: APP.sendEvent(t.viewport(), QMouseEvent(  # noqa: E731
+            tp, QPointF(pos), QPointF(t.viewport().mapToGlobal(pos)), btn, btns, QtC.NoModifier))
+        with mock.patch.object(win, "_context_menu"):
+            win._select_rows([rows[1]])
+            send(QEvent.MouseButtonPress, p, QtC.LeftButton, QtC.LeftButton)
+            send(QEvent.MouseMove, p + QPoint(2, 1), QtC.NoButton, QtC.LeftButton)
+            self.assertEqual(win.selected_ids(), [b.id])
+            send(QEvent.MouseButtonRelease, p + QPoint(2, 1), QtC.LeftButton, QtC.NoButton)
+        # sağ tık düğmenin üstünde de o satırı seçer: menü başka indirmeye uygulanmaz
+        win._select_rows([rows[1]])
+        with mock.patch.object(win, "_context_menu"):
+            QTest.mouseClick(t.viewport(), QtC.RightButton, QtC.NoModifier, self._button_center(rows[0], "more"))
+        pump(0.02)
+        self.assertEqual(win.selected_ids(), [a.id])
+
+    def test_keyboard_skips_group_rows(self):
+        from PySide6.QtCore import Qt as QtC
+        from PySide6.QtTest import QTest
+        win, t = self.win, self.win.table
+        items = self._list_items()
+        t.setFocus()
+        active, stopped = win._rows.index(items["downloading"].id), win._rows.index(items["stopped"].id)
+        self.assertFalse(isinstance(win._rows[active + 1], str))  # arada grup satırı var
+        for col in (G.SEL, G.NAME, G.STATUS):
+            t.setCurrentIndex(t.model().index(active, col))
+            QTest.keyClick(t, QtC.Key_Down)
+            self.assertEqual((t.currentIndex().row(), t.currentIndex().column()), (stopped, col))
+            QTest.keyClick(t, QtC.Key_Up)
+            self.assertEqual((t.currentIndex().row(), t.currentIndex().column()), (active, col))
+        QTest.keyClick(t, QtC.Key_Up)  # en üstteki grup satırına çıkmaz
+        self.assertEqual(t.currentIndex().row(), active)
+        QTest.keyClick(t, QtC.Key_PageUp)
+        self.assertEqual(t.currentIndex().row(), active)
+        t.setCurrentIndex(t.model().index(-1, -1))  # henüz geçerli hücre yokken ilk indirmeye gider
+        QTest.keyClick(t, QtC.Key_Down)
+        self.assertEqual(t.currentIndex().row(), active)
+
+    def test_rebuild_keeps_position_and_never_hits_another_row(self):
+        from PySide6.QtCore import QItemSelectionModel, Qt as QtC
+        from PySide6.QtTest import QTest
+        win, t = self.win, self.win.table
+        self._list_items()
+        for i in range(30):
+            it = win.mgr.add_http(self.s.url(f"/e{i}.bin"), os.path.join(TMP, "liste", f"e{i}.bin"), start=False)
+            it.status = "stopped"
+        win.refresh(force=True)
+        pump(0.05)
+        row = len(win._rows) - 3
+        iid = win._rows[row]
+        t.setFocus()
+        t.setCurrentIndex(t.model().index(row, G.NAME))
+        t.verticalScrollBar().setValue(2)
+        win.refresh(force=True)
+        self.assertEqual(t.currentIndex().row(), row)
+        self.assertEqual(t.verticalScrollBar().value(), 2)  # geçerli satıra kaymadı
+        self.assertEqual(win.selected_ids(), [iid])
+        # Shift ile seçim geçerli satırdan sürer
+        QTest.keyClick(t, QtC.Key_Up, QtC.ShiftModifier)
+        self.assertEqual(len(win.selected_ids()), 2)
+        # geçerli hücre dar pencerede ekran dışında kalsa da liste yana kaymaz
+        t.selectionModel().setCurrentIndex(t.model().index(row, G.ACTIONS), QItemSelectionModel.NoUpdate)
+        t.horizontalScrollBar().setValue(0)
+        win.refresh(force=True)
+        self.assertEqual(t.horizontalScrollBar().value(), 0)
+        # basılıyken satırlar yer değiştirirse bırakınca başka indirmeye uygulanmaz
+        t.clearSelection()
+        t.verticalScrollBar().setValue(0)
+        pump(0.05)
+        row = next(r for r, i in enumerate(win._rows) if isinstance(i, str) and win.mgr.items[i].status == "stopped")
+        p = self._button_center(row, "play")
+        with mock.patch.object(win.mgr, "start") as start:
+            QTest.mousePress(t.viewport(), QtC.LeftButton, QtC.NoModifier, p)
+            win.mgr.settings["list_sort"] = [G.NAME, False]
+            win.refresh()
+            QTest.mouseRelease(t.viewport(), QtC.LeftButton, QtC.NoModifier, p)
+            pump(0.02)
+            start.assert_not_called()
+        # yer değiştirmediyse tıklama çalışır
+        row = next(r for r, i in enumerate(win._rows) if isinstance(i, str) and win.mgr.items[i].status == "stopped")
+        p = self._button_center(row, "play")
+        with mock.patch.object(win.mgr, "start") as start:
+            QTest.mousePress(t.viewport(), QtC.LeftButton, QtC.NoModifier, p)
+            win.refresh(force=True)
+            QTest.mouseRelease(t.viewport(), QtC.LeftButton, QtC.NoModifier, p)
+            pump(0.02)
+            start.assert_called_once_with(win._rows[row])
+
+    def test_real_header_click_keeps_sort_indicator(self):
+        from PySide6.QtCore import QPoint, Qt as QtC
+        from PySide6.QtTest import QTest
+        win, h = self.win, self.win.table.horizontalHeader()
+        self._list_items()
+
+        def click(c):
+            QTest.mouseClick(h.viewport(), QtC.LeftButton, QtC.NoModifier,
+                             QPoint(h.sectionViewportPosition(c) + h.sectionSize(c) // 2, h.height() // 2))
+        click(G.NAME)
+        self.assertEqual(win.mgr.settings["list_sort"], [G.NAME, True])
+        for c in (G.SEL, G.ACTIONS):  # sıralamayan sütuna tıklamak gösterge yerini değiştirmez
+            click(c)
+            self.assertEqual(h.sortIndicatorSection(), G.NAME)
+            self.assertEqual(h.sortIndicatorOrder(), G.Qt.AscendingOrder)
+        win.table.clearSelection()
+        click(G.NAME)
+        self.assertEqual(h.sortIndicatorOrder(), G.Qt.DescendingOrder)
+        self.assertEqual(win.mgr.settings["list_sort"], [G.NAME, False])
+
+    def test_broken_saved_values_do_not_break_the_list(self):
+        win, t = self.win, self.win.table
+        items = self._list_items()
+        for bad in ([[1], True], [{"a": 1}, True], [1.0, True], [True, True], "x", 5, {}, [None, None], [99, 1], [1]):
+            win.mgr.settings["list_sort"] = bad
+            self.assertIsNone(win._sort_state(), bad)
+            win.refresh(force=True)
+            win._update_sort_indicator()
+        win.mgr.settings["list_sort"] = None
+        it = items["stopped"]
+        for bad in ([1, 2], [[0, 1]], [[0, None, 3]], [["a", "b", "c"]], [None], [[0, 1, 2], "abc"], "zzz", 7,
+                    [[-5, 999, 1]], [[0, 1 << 62, 5]], [[5, 1, 3]]):
+            it.segments = bad
+            self.assertIsNone(win._bar_segments(it), bad)
+            win.refresh(force=True)
+            t.viewport().grab()
+        it.segments = []
+        it.category = None  # eski/bozuk kayıt
+        win.refresh(force=True)
+        it.category = "general"
+
+    def test_bar_draws_empty_track_for_partial_runs_and_mirrors_in_rtl(self):
+        from PySide6.QtCore import QRectF
+        from PySide6.QtGui import QImage, QPainter
+
+        def draw(segs, direction=G.Qt.LeftToRight):
+            img = QImage(300, 20, QImage.Format_RGB32)
+            img.fill(G.QColor(255, 0, 255))
+            p = QPainter(img)
+            G.StatusDelegate._draw_bar(p, QRectF(50, 5, 200, 6), 0.5, segs, "#00ff00", direction)
+            p.end()
+            return [G.QColor(img.pixel(x, 7)) for x in range(300)]
+        bg, fill = G.QColor(255, 0, 255), G.QColor(0, 255, 0)
+        row = draw((100, [(0, 9, 10)]))  # HLS: yalnız biten parçalar
+        self.assertEqual(row[60], fill)
+        self.assertEqual(row[200], G.QColor(G.theme.T["track"]))  # kalan kısım boş çubuk, zemin değil
+        self.assertEqual(row[10], bg)
+        self.assertEqual(row[280], bg)
+        row = draw((100, [(0, 99, 25)]), G.Qt.RightToLeft)  # sağdan sola dolar
+        self.assertEqual(row[240], fill)
+        self.assertEqual(row[60], G.QColor(G.theme.T["track"]))
+
+    def test_row_button_hover_ends_when_mouse_leaves_list(self):
+        from PySide6.QtCore import QEvent, QPointF, Qt as QtC
+        from PySide6.QtGui import QMouseEvent
+        win, t = self.win, self.win.table
+        self._list_items()
+        row = next(r for r, i in enumerate(win._rows) if isinstance(i, str))
+        p = self._button_center(row, "more")
+        APP.sendEvent(t.viewport(), QMouseEvent(QEvent.MouseMove, QPointF(p), QPointF(t.viewport().mapToGlobal(p)),
+                                                QtC.NoButton, QtC.NoButton, QtC.NoModifier))
+        self.assertEqual(t.action_hover, (row, "more"))
+        APP.sendEvent(t.viewport(), QEvent(QEvent.Leave))
+        self.assertIsNone(t.action_hover)
+
+    def test_row_button_tooltip(self):
+        from PySide6.QtCore import QEvent
+        from PySide6.QtGui import QHelpEvent
+        from PySide6.QtWidgets import QToolTip
+        win, t = self.win, self.win.table
+        self._list_items()
+        row = next(r for r, i in enumerate(win._rows) if isinstance(i, str))
+        p = self._button_center(row, "more")
+        self.assertTrue(APP.sendEvent(t.viewport(), QHelpEvent(QEvent.ToolTip, p, t.viewport().mapToGlobal(p))))
+        self.assertEqual(QToolTip.text(), "Diğer")
+        QToolTip.hideText()
+
+    def test_live_sort_does_not_reorder_on_every_tick(self):
+        # Hıza göre sıralıyken satırlar her yenilemede yer değiştirmesin (fare altından kaymasın); en çok 3 sn'de bir
+        win = self.win
+        items = self._list_items()
+        a, b = items["stopped"], items["error"]
+        a.speed, b.speed = 10, 20
+        win.table.horizontalHeader().sectionClicked.emit(G.SPEED)
+        first = list(win._visible)
+        self.assertLess(first.index(a.id), first.index(b.id))
+        a.speed, b.speed = 30, 5
+        win.refresh()
+        self.assertEqual(win._visible, first)  # hemen değişmez
+        win._live_sort = (win._live_sort[0], win._live_sort[1], time.monotonic() - 4)
+        win.refresh()
+        self.assertLess(win._visible.index(b.id), win._visible.index(a.id))  # süre dolunca sıralanır
 
     def test_extra_columns_start_hidden_once(self):
         win = self.win
@@ -776,8 +1172,12 @@ class GuiTests(unittest.TestCase):
             self.assertIn("&Hilfe", titles())
             self.assertEqual(titles()[-1], "&Language")
             self.assertEqual(self.win.table.horizontalHeaderItem(G.NAME).text(), "Dateiname")
+            t = self.win.table  # en uzun "Tekrar Dene" çevirisi de işlem sütununa sığar
+            rects = G.ActionDelegate.rects(t.visualRect(t.model().index(0, G.ACTIONS)), ("retry", "more"), t.fontMetrics(),
+                                           t.layoutDirection())
+            self.assertGreaterEqual(rects["retry"].left(), t.visualRect(t.model().index(0, G.ACTIONS)).left())
             self.assertEqual(self.win.mgr.settings["language"], "de")
-            row = self.win._visible.index(it.id)
+            row = self.win._rows.index(it.id)
             self.assertEqual(self.win.table.item(row, G.STATUS).text(), G.STATUS_TEXT[it.status])
             self.assertNotEqual(G.STATUS_TEXT["queued"], "Kuyrukta")
             self.assertIn(it.id, self.win.progress_dialogs)  # açık indirme penceresi yeniden açıldı

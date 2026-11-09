@@ -453,5 +453,10 @@
  "TurboDM indirmeyi devralırken kapandı": "TurboDM wurde beim Übernehmen des Downloads beendet",
  "Yeni İndirme": "Neuer Download",
  "Diğer": "Mehr",
- "{0} indirme, {1} tanesi etkin": "Downloads: {0}, aktiv: {1}"
+ "{0} indirme, {1} tanesi etkin": "Downloads: {0}, aktiv: {1}",
+ "Bekleyen": "Wartend",
+ "Tamamlanan": "Abgeschlossen",
+ "Gruplara ayır": "Liste gruppieren",
+ "{0} bağlantı": "Verbindungen: {0}",
+ "kaldığı yerden sürer": "wird dort fortgesetzt, wo es aufhörte"
 }

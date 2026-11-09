@@ -453,5 +453,10 @@
  "TurboDM indirmeyi devralırken kapandı": "أُغلق TurboDM أثناء تسلّم التنزيل",
  "Yeni İndirme": "تنزيل جديد",
  "Diğer": "المزيد",
- "{0} indirme, {1} tanesi etkin": "التنزيلات: {0}، النشطة: {1}"
+ "{0} indirme, {1} tanesi etkin": "التنزيلات: {0}، النشطة: {1}",
+ "Bekleyen": "قيد الانتظار",
+ "Tamamlanan": "المكتملة",
+ "Gruplara ayır": "تجميع القائمة",
+ "{0} bağlantı": "الاتصالات: {0}",
+ "kaldığı yerden sürer": "يتابع من حيث توقف"
 }

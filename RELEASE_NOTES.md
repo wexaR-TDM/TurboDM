@@ -7,6 +7,13 @@ To update an installed TurboDM: *Help → Check for updates*. · [Türkçe sür�
 <!-- Developer note: add a "## x.y.z" section at the top for every new version, in the same order as
      SURUM_NOTLARI.md. The update window shows the section of that version (build.ps1 puts it into latest.json). -->
 
+## 1.7.30
+• Redesigned download list: each download takes two lines, with a file type icon, a bold file name, and the category and connection count below it. The Status column has a segmented progress bar showing each connection separately
+• Row buttons: pause, resume, open folder, Retry and ⋯ for more actions, right on the row
+• The list is grouped into Downloading, Waiting and Completed. If you don't want this, turn it off from the "More" menu or by right-clicking a column header
+• Click a column header to sort: with groups on, each group is sorted on its own, and your choice is remembered
+• The window opens larger (1280x720) the first time
+
 ## 1.7.29
 • Redesigned main window: instead of the top toolbar, a "New Download" button on the left (its arrow offers batch downloads, torrents and magnets) and a clean sidebar; on the right, the title of the selected view, the download count and action buttons. Delete Completed, queue and scheduler actions are in the "More" menu; light and dark theme colors were refreshed too
 • The Last Try, Description, Added and Finished columns are now hidden at first, leaving more room for file names. Right-click a column header to show them (your choice is kept)

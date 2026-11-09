@@ -88,7 +88,7 @@ QTableWidget#list::item { border: none; border-bottom: 1px solid $border_soft; p
 QTableWidget#list::item:selected { background: $accent_soft; color: $text; }
 QHeaderView { background: $surface; }
 QHeaderView::section { background: $surface; color: $muted; border: none; border-bottom: 1px solid $border;
-    padding: 7px 8px; font-weight: 600; }
+    padding: 7px 12px; font-weight: 600; }
 QTableCornerButton::section { background: $surface; border: none; }
 
 QStatusBar { background: $side; color: $muted; border-top: 1px solid $border; }
@@ -301,6 +301,20 @@ def _draw(name, p, fg, ac):
         _pen(p, ac, 7)
         p.drawLine(32, 12, 32, 52)
         p.drawLine(12, 32, 52, 32)
+    elif name == "folder":
+        _pen(p, fg)
+        path = QPainterPath(QPointF(8, 16))
+        path.lineTo(26, 16)
+        path.lineTo(32, 23)
+        path.lineTo(56, 23)
+        path.lineTo(56, 52)
+        path.lineTo(8, 52)
+        path.closeSubpath()
+        p.drawPath(path)
+    elif name == "more":  # üç nokta
+        _fill(p, fg)
+        for x in (14, 32, 50):
+            p.drawEllipse(QPointF(x, 32), 5, 5)
     elif name == "chevron":  # açılır menü oku
         _pen(p, ac, 7)
         _poly(p, [(14, 24), (32, 42), (50, 24)])

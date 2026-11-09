@@ -75,6 +75,8 @@ DEFAULT_SETTINGS = {
     "queues": [],                   # ana kuyruk dışındaki kuyruklar [{"id", "name", "max_concurrent", ...}]
     "custom_categories": [],        # [{"key": "c_…", "name", "folder", "exts": [...]}]
     "hidden_columns": [],           # listede gizlenen sütunlar
+    "group_list": True,             # liste İndiriliyor / Bekleyen / Tamamlanan olarak gruplansın
+    "list_sort": None,              # [sütun, artan mı]; yoksa eklenme sırası
 }
 
 IDLE_AFTER = 120  # sn: bu kadar süre klavye/fare kullanılmazsa bilgisayar "boşta" sayılır
