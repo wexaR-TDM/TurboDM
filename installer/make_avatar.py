@@ -31,25 +31,12 @@ def main(out):
         pen.setCapStyle(Qt.RoundCap)
         p.setPen(pen)
         p.drawLine(QPointF(S * (0.16), S * y), QPointF(S * (0.16 + w), S * y))
-    # ana daire: TurboDM mavisi degrade
+    # uygulama simgesi (make_icon.render): simgedeki daire boyutun 60/64'ü
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from make_icon import render
     c, r = QPointF(S * 0.56, S * 0.5), S * 0.27
-    cg = QLinearGradient(0, c.y() - r, 0, c.y() + r)
-    cg.setColorAt(0, QColor("#4a9bff"))
-    cg.setColorAt(1, QColor("#1557b8"))
-    p.setPen(QPen(QColor(255, 255, 255, 40), S * 0.008))
-    p.setBrush(cg)
-    p.drawEllipse(c, r, r)
-    # beyaz indirme oku + taban çizgisi
-    u = r / 32.0
-    ox, oy = c.x() - 32 * u, c.y() - 32 * u
-    path = QPainterPath()
-    for i, (x, y) in enumerate([(25, 13), (39, 13), (39, 32), (49, 32), (32, 49), (15, 32), (25, 32)]):
-        (path.moveTo if i == 0 else path.lineTo)(ox + x * u, oy + y * u)
-    path.closeSubpath()
-    p.setPen(Qt.NoPen)
-    p.setBrush(QColor("white"))
-    p.drawPath(path)
-    p.drawRoundedRect(QRectF(ox + 16 * u, oy + 52 * u, 32 * u, 4.5 * u), 2 * u, 2 * u)
+    size = int(round(2 * r * 64 / 60))
+    p.drawImage(QPointF(c.x() - size / 2, c.y() - size / 2), render(size))
     p.end()
     img.save(out)
     print(out)

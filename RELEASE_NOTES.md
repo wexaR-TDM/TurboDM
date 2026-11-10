@@ -7,6 +7,9 @@ To update an installed TurboDM: *Help → Check for updates*. · [Türkçe sür�
 <!-- Developer note: add a "## x.y.z" section at the top for every new version, in the same order as
      SURUM_NOTLARI.md. The update window shows the section of that version (build.ps1 puts it into latest.json). -->
 
+## 1.7.32
+• Refreshed app icon: the familiar blue circle and arrow are drawn more cleanly, and the line under the arrow is now split into parts (TurboDM downloads a file in parts). The same icon on the desktop, taskbar, setup wizard and browser extension
+
 ## 1.7.31
 • Search box: type in the box in the page header to filter the list by file name (Ctrl+F opens it, Esc clears it)
 • Speed panel: total speed, a speed graph of the last 60 seconds, the number of active downloads, time left, and queue start/stop and scheduler. If you don't want it, turn it off from the "More" menu

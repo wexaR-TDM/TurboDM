@@ -3,7 +3,7 @@ import os
 import sys
 
 APP_NAME = "TurboDM"
-VERSION = "1.7.31"   # build.ps1 kurulum dosyasının sürümünü buradan alır
+VERSION = "1.7.32"   # build.ps1 kurulum dosyasının sürümünü buradan alır
 
 # Güncellemelerin yayımlandığı GitHub deposu ("kullanıcı/depo"). Boşsa "Güncellemeleri denetle"
 # sunucunun ayarlanmadığını söyler. Program şu adresi okur:

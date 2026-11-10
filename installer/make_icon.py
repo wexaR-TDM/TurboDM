@@ -1,34 +1,47 @@
-"""TurboDM simgesini (mavi daire + beyaz ok) çok boyutlu .ico ve .png olarak üretir."""
+"""TurboDM simgesini (mavi daire + beyaz ok + parçalı çizgi) çok boyutlu .ico ve .png olarak üretir."""
 import os
 import struct
 import sys
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QPA_FONTDIR", os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts"))
-from PySide6.QtCore import QBuffer, QByteArray, QIODevice, Qt  # noqa: E402
+from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QRectF, Qt  # noqa: E402
 from PySide6.QtGui import (QColor, QFont, QGuiApplication, QImage, QLinearGradient, QPainter,  # noqa: E402
                            QPainterPath, QPen, QRadialGradient)
 
 
 def render(size):
+    """Mavi daire, beyaz ok ve altında parçalı çizgi (parçalı indirme). 24 pikselden küçükte çizgi tek parça."""
     img = QImage(size, size, QImage.Format_ARGB32)
     img.fill(Qt.transparent)
     p = QPainter(img)
     p.setRenderHint(QPainter.Antialiasing)
     s = size / 64.0
     g = QLinearGradient(0, 0, 0, size)
-    g.setColorAt(0, QColor("#3b8cf0"))
-    g.setColorAt(1, QColor("#1557b8"))
+    g.setColorAt(0, QColor("#5aa6ff"))
+    g.setColorAt(1, QColor("#1f6fe0"))
     p.setBrush(g)
     p.setPen(Qt.NoPen)
-    p.drawEllipse(int(2 * s), int(2 * s), int(60 * s), int(60 * s))
-    p.setBrush(QColor("white"))
+    p.drawEllipse(QRectF(2 * s, 2 * s, 60 * s, 60 * s))
+    white = QColor("white")
     path = QPainterPath()
-    for i, (x, y) in enumerate([(25, 12), (39, 12), (39, 32), (49, 32), (32, 50), (15, 32), (25, 32)]):
+    for i, (x, y) in enumerate([(25.5, 12), (38.5, 12), (38.5, 31), (48, 31), (32, 47), (16, 31), (25.5, 31)]):
         (path.moveTo if i == 0 else path.lineTo)(x * s, y * s)
     path.closeSubpath()
+    pen = QPen(white, 1.6 * s)
+    pen.setJoinStyle(Qt.RoundJoin)  # okun köşeleri hafif yuvarlak
+    p.setPen(pen)
+    p.setBrush(white)
     p.drawPath(path)
-    p.fillRect(int(15 * s), int(52 * s), int(34 * s), max(1, int(4 * s)), QColor("white"))
+    p.setPen(Qt.NoPen)
+    y, h = 51 * s, max(1.0, 4 * s)
+    if size < 24:
+        p.drawRoundedRect(QRectF(16 * s, y, 32 * s, h), h / 2, h / 2)
+    else:
+        gap, w = 1.6 * s, (32 * s - 3 * 1.6 * s) / 4
+        for i in range(4):
+            p.setBrush(QColor("#a9d1ff") if i == 3 else white)
+            p.drawRoundedRect(QRectF(16 * s + i * (w + gap), y, w, h), h / 3, h / 3)
     p.end()
     return img
 

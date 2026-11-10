@@ -7,6 +7,9 @@ Kurulu TurboDM'i güncellemek için: *Yardım → Güncellemeleri denetle*. · [
 <!-- Geliştirici notu: her yeni sürümde en üste "## x.y.z" bölümü eklenir (İngilizcesi RELEASE_NOTES.md'ye). "Güncellemeleri denetle"
      penceresinde o sürümün bölümü gösterilir (build.ps1 otomatik olarak latest.json'a koyar). -->
 
+## 1.7.32
+• Yenilenen uygulama simgesi: tanıdık mavi daire ve ok daha temiz çizildi; okun altındaki çizgi artık parçalı (TurboDM dosyayı parçalara bölerek indirir). Masaüstü, görev çubuğu, kurulum sihirbazı ve tarayıcı eklentisinde aynı simge
+
 ## 1.7.31
 • Arama kutusu: sayfa başlığındaki kutuya yazarak listeyi dosya adına göre süzün (Ctrl+F ile açılır, Esc ile temizlenir)
 • Hız paneli: toplam hız, son 60 saniyenin hız grafiği, etkin indirme sayısı, kalan süre ve kuyruğu başlatıp durdurma, zamanlayıcı. İstemezseniz "Diğer" menüsünden kapatabilirsiniz
