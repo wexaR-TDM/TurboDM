@@ -15,6 +15,23 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from . import appinfo
 
 requests = queue.Queue()   # GUI tarafından tick'te okunur
+_extension_last_seen = None
+_extension_lock = threading.Lock()
+
+
+def extension_seen(max_age=150):
+    """Doğrulanan eklenti son birkaç dakika içinde iletişim kurdu mu?"""
+    with _extension_lock:
+        return _extension_last_seen is not None and time.monotonic() - _extension_last_seen <= max_age
+
+
+def _note_extension(headers):
+    global _extension_last_seen
+    if headers.get("X-TurboDM") != "1" or not re.fullmatch(
+            r"chrome-extension://[a-p]{32}/?", headers.get("Origin") or ""):
+        return
+    with _extension_lock:
+        _extension_last_seen = time.monotonic()
 
 # Tarayıcı indirmelerinin sahipliği (eklenti hem mağazadan hem elle kurulmuşsa iki kopya da her indirmeyi görür):
 #  * "app": indirmeyi bir kopya üstlendi; aynı adres kısa sürede yeniden gelirse ikinci pencere açılmaz
@@ -103,6 +120,8 @@ class _Handler(BaseHTTPRequestHandler):
         pass
 
     def _reply(self, code, obj):
+        if code == 200:
+            _note_extension(self.headers)
         body = json.dumps(obj).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
@@ -135,8 +154,12 @@ class _Handler(BaseHTTPRequestHandler):
             data = json.loads(self.rfile.read(min(n, 1 << 20)) or b"{}")
         except ValueError:
             return self._reply(400, {"error": "bad json"})
+        if not isinstance(data, dict):
+            return self._reply(400, {"error": "bad json"})
         check_extension(self.headers)
-        if self.path == "/add" and isinstance(data.get("url"), str):
+        if self.path == "/ping":
+            self._reply(200, {"app": "TurboDM"})
+        elif self.path == "/add" and isinstance(data.get("url"), str):
             # Tarayıcının başlattığı indirme ("check"): kabul etmeden önce TurboDM dosyaya gerçekten ulaşabiliyor mu?
             # Ulaşamıyorsa (bot koruması, giriş, süresi dolmuş bağlantı…) reddedilir; eklenti indirmeyi tarayıcıda sürdürür.
             if data.get("check"):

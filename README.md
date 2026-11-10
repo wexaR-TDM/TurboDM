@@ -54,7 +54,7 @@
 - **Dosya doğrulama:** inen dosyanın MD5 / SHA-1 / SHA-256 özetini sitenin verdiğiyle karşılaştırır.
 - İndirme sürerken bilgisayar **uyku moduna geçmez**; bağlantı sorunuyla duran indirme **kendiliğinden yeniden denenir**.
 - Vekil sunucu (proxy), özel tarayıcı kimliği (User-Agent) ve site girişleri (parolalar Windows'un şifrelemesiyle saklanır).
-- Hız sınırı tepsiden tek tıkla açılıp kapanır; istenirse yalnızca bilgisayar kullanılırken uygulanır. Listeyi dışa/içe aktarma, sütunları gizleme, başlığa tıklayarak sıralama, listeyi duruma göre gruplama (kapatılabilir), eklenme ve bitiş tarihi sütunları.
+- Hız sınırı tepsiden tek tıkla açılıp kapanır; istenirse yalnızca bilgisayar kullanılırken uygulanır. Listeyi dışa/içe aktarma, dosya adına göre arama (Ctrl+F), toplam hız grafiği, sütunları gizleme, başlığa tıklayarak sıralama, listeyi duruma göre gruplama (kapatılabilir), eklenme ve bitiş tarihi sütunları.
 - **Windows'un açık/koyu moduna kendiliğinden uyan** TurboDM teması.
 - Program içinden tek tıkla güncelleme (*Yardım → Güncellemeleri denetle*); güncellemede inmekte olan indirmeler kaldığı yerden sürer.
 - **7 dil:** English, Türkçe, Deutsch, Français, Español, العربية, Italiano — menü çubuğundaki **Language** menüsünden anında değişir (program kapanmaz); varsayılan olarak Windows'un dili kullanılır, kurulumda da dil seçilebilir.

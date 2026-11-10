@@ -65,8 +65,9 @@ QToolButton#newDownload, QToolButton#newDownloadMenu { background: $accent; colo
     font-size: 14px; font-weight: 600; padding: 9px 8px; }
 QToolButton#newDownload:hover, QToolButton#newDownloadMenu:hover { background: $accent_hover; }
 QToolButton#newDownloadMenu::menu-indicator, QToolButton#headMenu::menu-indicator { image: none; }
-QToolButton#sideButton { background: transparent; border: none; border-radius: 7px; padding: 8px 10px; color: $muted; }
+QToolButton#sideButton { background: transparent; border: none; border-radius: 8px; padding: 8px 6px; color: $text; }
 QToolButton#sideButton:hover { background: $hover; color: $text; }
+QFrame#sideSep { background: $border_soft; border: none; }
 QToolButton#headButton, QToolButton#headMenu { background: $surface; border: 1px solid $border; border-radius: 8px;
     padding: 7px 12px; color: $text; }
 QToolButton#headButton:hover, QToolButton#headMenu:hover { background: $hover; }
@@ -74,6 +75,19 @@ QToolButton#headButton:pressed, QToolButton#headMenu:pressed { background: $acce
 QToolButton#headButton:disabled { color: $muted; }
 QLabel#pageTitle { font-size: 21px; font-weight: 600; }
 QLabel#pageSub { color: $muted; }
+QFrame#searchBox { background: $surface; border: 1px solid $border; border-radius: 8px; }
+QFrame#searchBox[focus="true"] { border: 1px solid $accent; }
+QLineEdit#searchEdit, QLineEdit#searchEdit:focus { background: transparent; border: none; padding: 0; }
+QLabel#kbd { color: $muted; border: 1px solid $border; border-radius: 5px; padding: 0 5px; font-size: 11px; }
+QFrame#speedPanel { background: $surface; border: 1px solid $border; border-radius: 12px; }
+QFrame#queueCard { background: $surface2; border: none; border-radius: 10px; }
+QLabel#panelCap { color: $muted; font-size: 12px; }
+QLabel#panelBig { font-size: 26px; font-weight: 600; }
+QLabel#panelUnit { color: $muted; font-size: 13px; }
+QLabel#panelVal { font-size: 16px; font-weight: 600; }
+QLabel#queueState { font-weight: 600; }
+QLabel#queueWait { color: $muted; }
+QPushButton#miniButton { padding: 4px 10px; min-height: 16px; min-width: 0; }
 QFrame#listFrame { background: $surface; border: 1px solid $border; border-bottom: none;
     border-top-left-radius: 12px; border-top-right-radius: 12px; }
 
@@ -311,6 +325,10 @@ def _draw(name, p, fg, ac):
         path.lineTo(8, 52)
         path.closeSubpath()
         p.drawPath(path)
+    elif name == "search":  # büyüteç (tek renk: vurgu rengi)
+        _pen(p, ac, 6)
+        p.drawEllipse(QPointF(27, 27), 16, 16)
+        p.drawLine(39, 39, 54, 54)
     elif name == "more":  # üç nokta
         _fill(p, fg)
         for x in (14, 32, 50):
@@ -341,22 +359,18 @@ def _draw(name, p, fg, ac):
         _pen(p, ac, 9)
         p.drawLine(16, 8, 16, 16)
         p.drawLine(48, 8, 48, 16)
-    elif name == "play":
-        _fill(p, ac)
-        path = QPainterPath(QPointF(20, 12))
-        path.lineTo(52, 32)
-        path.lineTo(20, 52)
-        path.closeSubpath()
-        p.drawPath(path)
-    elif name == "pause":
-        _fill(p, fg)
-        p.drawRoundedRect(QRectF(16, 12, 11, 40), 4, 4)
-        p.drawRoundedRect(QRectF(37, 12, 11, 40), 4, 4)
-    elif name == "stop":
-        _fill(p, fg)
+    elif name == "play":  # içi boş üçgen
+        _pen(p, ac, 6)
+        _poly(p, [(21, 13), (51, 32), (21, 51)], close=True)
+    elif name == "pause":  # iki ince dikey çizgi
+        _pen(p, fg, 6.5)
+        p.drawLine(23, 14, 23, 50)
+        p.drawLine(41, 14, 41, 50)
+    elif name == "stop":  # içi boş yuvarlak köşeli kare
+        _pen(p, fg, 6)
         p.drawRoundedRect(QRectF(14, 14, 36, 36), 8, 8)
     elif name in ("trash", "trash_done"):
-        _pen(p, fg)
+        _pen(p, T["bad"] if name == "trash" else fg)
         p.drawLine(10, 16, 54, 16)
         _poly(p, [(24, 16), (26, 8), (38, 8), (40, 16)])
         _poly(p, [(15, 16), (18, 56), (46, 56), (49, 16)])
@@ -379,11 +393,14 @@ def _draw(name, p, fg, ac):
         p.drawEllipse(QPointF(32, 32), 24, 24)
         _pen(p, ac, 5.5)
         _poly(p, [(32, 18), (32, 32), (42, 38)])
-    elif name in ("queue_start", "queue_stop", "queue"):
+    elif name in ("queue_start", "queue_stop", "queue", "st_queue", "list"):
         _pen(p, fg)
         for y in (16, 30, 44):
-            p.drawLine(8, y, 30 if name != "queue" else 56, y)
-        if name == "queue_start":
+            p.drawLine(8, y, 56 if name == "list" else 30, y)
+        if name in ("queue", "st_queue"):  # çizgiler + küçük içi boş oynat üçgeni
+            _pen(p, fg, 5)
+            _poly(p, [(38, 24), (56, 36), (38, 48)], close=True)
+        elif name == "queue_start":
             _fill(p, ac)
             path = QPainterPath(QPointF(38, 24))
             path.lineTo(58, 36)
@@ -404,12 +421,10 @@ def _draw(name, p, fg, ac):
         _pen(p, ac)
         _poly(p, [(44, 6), (46, 18), (34, 20)])
     # ---- kategoriler
-    elif name == "all":  # tepsiye inen ok
-        _pen(p, fg)
-        _poly(p, [(8, 38), (8, 54), (56, 54), (56, 38)])
-        _pen(p, ac, 6)
-        p.drawLine(32, 8, 32, 40)
-        _poly(p, [(20, 28), (32, 40), (44, 28)])
+    elif name == "all":  # liste: üç yatay çizgi
+        _pen(p, fg, 5.5)
+        for y in (18, 32, 46):
+            p.drawLine(10, y, 54, y)
     elif name == "compressed":
         _pen(p, fg)
         p.drawRoundedRect(QRectF(10, 8, 44, 48), 7, 7)
@@ -472,28 +487,22 @@ def _draw(name, p, fg, ac):
         _pen(p, "#ffffff", 6)
         p.drawLine(32, 20, 32, 46)
         _poly(p, [(21, 30), (32, 19), (43, 30)])
-    elif name == "st_done":
+    elif name == "st_done":  # içi boş daire + onay işareti
+        _pen(p, ac, 5.5)
+        p.drawEllipse(QPointF(32, 32), 24, 24)
+        _poly(p, [(20, 33), (28, 41), (44, 24)])
+    elif name == "st_error":  # içi boş daire + ünlem
+        _pen(p, ac, 5.5)
+        p.drawEllipse(QPointF(32, 32), 24, 24)
+        p.drawLine(32, 19, 32, 35)
         _fill(p, ac)
-        p.drawEllipse(QPointF(32, 32), 26, 26)
-        _pen(p, "#ffffff", 6.5)
-        _poly(p, [(19, 33), (28, 42), (45, 24)])
-    elif name == "st_error":
-        _fill(p, ac)
-        p.drawEllipse(QPointF(32, 32), 26, 26)
-        _pen(p, "#ffffff", 6.5)
-        p.drawLine(23, 23, 41, 41)
-        p.drawLine(41, 23, 23, 41)
+        p.drawEllipse(QPointF(32, 44), 3.4, 3.4)
     elif name == "st_pause":
         _pen(p, fg, 5)
         p.drawEllipse(QPointF(32, 32), 24, 24)
         _fill(p, fg)
         p.drawRoundedRect(QRectF(23, 21, 6, 22), 2, 2)
         p.drawRoundedRect(QRectF(35, 21, 6, 22), 2, 2)
-    elif name == "st_queue":
-        _pen(p, fg, 5)
-        p.drawEllipse(QPointF(32, 32), 24, 24)
-        for y in (24, 32, 40):
-            p.drawLine(22, y, 42, y)
     elif name == "st_wait":
         _pen(p, fg, 5)
         p.drawEllipse(QPointF(32, 32), 24, 24)
@@ -503,7 +512,7 @@ def _draw(name, p, fg, ac):
 
 STATUS_ICON = {"downloading": ("st_down", "accent"), "connecting": ("st_wait", "accent"),
                "completed": ("st_done", "ok"), "error": ("st_error", "bad"), "seeding": ("st_up", "ok"),
-               "queued": ("st_queue", "accent"), "stopped": ("st_pause", "accent"),
+               "queued": ("st_queue", "muted"), "stopped": ("st_pause", "accent"),
                "converting": ("st_wait", "accent")}
 
 

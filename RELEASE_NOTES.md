@@ -7,6 +7,15 @@ To update an installed TurboDM: *Help → Check for updates*. · [Türkçe sür�
 <!-- Developer note: add a "## x.y.z" section at the top for every new version, in the same order as
      SURUM_NOTLARI.md. The update window shows the section of that version (build.ps1 puts it into latest.json). -->
 
+## 1.7.31
+• Search box: type in the box in the page header to filter the list by file name (Ctrl+F opens it, Esc clears it)
+• Speed panel: total speed, a speed graph of the last 60 seconds, the number of active downloads, time left, and queue start/stop and scheduler. If you don't want it, turn it off from the "More" menu
+• Status bar: whether the browser extension is connected to TurboDM, free space in the download folder, total download speed and the version
+• Plain numbers in the list (e.g. 337 / 512 MB), "–" in empty speed and time cells, when a download finished (e.g. today 14:32), an open folder button on paused downloads; refreshed icons and a select-all box in the header
+• In a narrow window the title and buttons no longer disappear: the search box and button labels shrink first, and if needed the Speed and Time Left columns are hidden for the moment
+• The window no longer freezes while reading the free space of a download folder on a network drive
+(browser extension 1.7.8: tells TurboDM "I'm here" once a minute, so the connection status can be shown)
+
 ## 1.7.30
 • Redesigned download list: each download takes two lines, with a file type icon, a bold file name, and the category and connection count below it. The Status column has a segmented progress bar showing each connection separately
 • Row buttons: pause, resume, open folder, Retry and ⋯ for more actions, right on the row

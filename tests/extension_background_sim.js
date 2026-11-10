@@ -13,7 +13,7 @@ const session = {};
 globalThis.chrome = {
   storage: { local: { get: (d, cb) => cb(d) }, onChanged: ev("storage"),
              session: { get: async (d) => ({ ...d, ...session }), set: async (v) => Object.assign(session, v) } },
-  runtime: { onMessage: ev("msg"), onInstalled: ev("installed"), getManifest: () => ({ version: "x" }),
+  runtime: { onMessage: ev("msg"), onInstalled: ev("installed"), onStartup: ev("startup"), getManifest: () => ({ version: "x" }),
              // tarayıcının TurboDM yardımcısını çalıştırması: TurboDM açılır
              sendNativeMessage: async (host, msg) => { calls.native.push([host, msg.cmd]);
                                                        if (!nativeOk) return { ok: false };
@@ -23,6 +23,7 @@ globalThis.chrome = {
   tabs: { onUpdated: ev("tabUpd"), onRemoved: ev("tabRem"), sendMessage: () => Promise.resolve() },
   action: { setBadgeText: () => Promise.resolve(), setBadgeBackgroundColor: () => Promise.resolve() },
   cookies: { getAll: async () => [] },
+  alarms: { get: async () => undefined, create: async () => {}, onAlarm: ev("alarm") },
   webRequest: { onBeforeRequest: ev("beforeRequest"), onHeadersReceived: ev("headers"),
                 onBeforeSendHeaders: ev("sendHeaders"), onSendHeaders: ev("sendHeaders2") },
   downloads: {

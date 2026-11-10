@@ -240,9 +240,10 @@ class GuiTests(unittest.TestCase):
         self.assertEqual(win.selected_ids(), [items[2].id])
         t.horizontalHeader().sectionClicked.emit(G.SEL)  # başlık kutusu: tümü
         self.assertEqual(len(win.selected_ids()), 4)
-        self.assertEqual(t.horizontalHeaderItem(G.SEL).text(), "☑")
+        self.assertTrue(t.horizontalHeader().all_checked)  # başlık kutusu işaretli çizilir
         t.horizontalHeader().sectionClicked.emit(G.SEL)  # tekrar: hiçbiri
         self.assertEqual(win.selected_ids(), [])
+        self.assertFalse(t.horizontalHeader().all_checked)
         win.select_where(win.SELECT_PRESETS[0][1])  # bitmemişler
         self.assertEqual(win.selected_ids(), [i.id for i in items[:3]])
         win.refresh(force=True)  # liste yenilenince çoklu seçim korunmalı
@@ -549,8 +550,7 @@ class GuiTests(unittest.TestCase):
         # kaldırılan araç çubuğundaki işlemler hâlâ ulaşılabilir
         reach = {a for b in win.findChildren(G.QToolButton) for a in b.actions()}
         reach |= {a for b in (win._new_menu_btn, win._more_btn) for a in b.menu().actions()}
-        for a in (win.a_resume, win.a_stop, win.a_stop_all, win.a_delete, win.a_delete_done, win.a_options,
-                  win.a_sched, win.a_qstart, win.a_qstop):
+        for a in (win.a_resume, win.a_stop, win.a_stop_all, win.a_delete, win.a_delete_done, win.a_options):
             self.assertIn(a, reach, a.text())
         # gezinme: görünümler üstte, kategoriler başlığın altında; başlık seçilemez ve sayaç hatası vermez
         tree = win.tree
@@ -710,7 +710,10 @@ class GuiTests(unittest.TestCase):
             pump(0.05)
         stopped, active, failed, done = (items[k] for k in ("stopped", "downloading", "error", "completed"))
         self.assertEqual(G.MainWindow._row_actions(active), ("pause", "more"))
-        self.assertEqual(G.MainWindow._row_actions(stopped), ("play", "more"))
+        self.assertEqual(G.MainWindow._row_actions(stopped), ("play", "folder", "more"))  # hedef klasör biliniyor
+        no_dir = M.DownloadItem.__new__(M.DownloadItem)
+        no_dir.status, no_dir.path = "stopped", ""
+        self.assertEqual(G.MainWindow._row_actions(no_dir), ("play", "more"))  # klasör bilinmiyorsa düğme yok
         self.assertEqual(G.MainWindow._row_actions(failed), ("retry", "more"))
         self.assertEqual(G.MainWindow._row_actions(done), ("folder", "more"))
         win._select_rows([win._rows.index(done.id)])
@@ -752,7 +755,8 @@ class GuiTests(unittest.TestCase):
         self.assertEqual(t.item(row, G.NAME).data(G.SUB_ROLE), "Video · kaldığı yerden sürer")
         self.assertFalse(t.item(row, G.NAME).icon().isNull())
         self.assertEqual(t.item(row, G.STATUS).data(G.SEG_ROLE), (1000, [(0, 499, 300), (500, 999, 600)]))
-        self.assertIn("/", t.item(row, G.STATUS).data(G.DETAIL_ROLE))
+        self.assertEqual(t.item(row, G.STATUS).data(G.DETAIL_ROLE), "%40 · 400 B")  # duraklatılmış: yüzde · inen miktar
+        self.assertEqual(t.item(row, G.STATUS).text(), "Durduruldu")
         # bilinmeyen parça yoksa ya da çok fazlaysa tek parça çizilir
         stopped.segments = [[i, i, i] for i in range(40)]
         self.assertIsNone(win._bar_segments(stopped))
@@ -910,6 +914,142 @@ class GuiTests(unittest.TestCase):
         click(G.NAME)
         self.assertEqual(h.sortIndicatorOrder(), G.Qt.DescendingOrder)
         self.assertEqual(win.mgr.settings["list_sort"], [G.NAME, False])
+
+    def test_list_number_formats(self):
+        MB, GB = 1024 ** 2, 1024 ** 3
+        self.assertEqual([G.list_size(n) for n in (512 * MB, 96 * MB, 5.76 * GB, 32.23 * GB, 300 * MB, 0, 700)],
+                         ["512 MB", "96 MB", "5.76 GB", "32.23 GB", "300 MB", "0 B", "700 B"])
+        self.assertEqual([G.list_speed(n) for n in (48.4 * MB, 61.2 * MB, 50 * MB, 0, None)],
+                         ["48.4 MB/s", "61.2 MB/s", "50 MB/s", "", ""])
+        self.assertEqual([G.list_pct(f) for f in (0.62, 0.319, 0.0, 0.999999, 1.0)], ["%62", "%31", "%0", "%99", "%99"])
+        self.assertEqual(G.list_pct(1.0, done=True), "%100")
+        self.assertEqual(G.list_amount(317 * MB, 512 * MB), "317 / 512 MB")
+        self.assertEqual(G.list_amount(1.79 * GB, 5.76 * GB), "1.79 / 5.76 GB")
+        self.assertEqual(G.list_amount(850 * MB, 5.76 * GB), "0.83 / 5.76 GB")
+        self.assertEqual(G.list_amount(330.61 * MB, 512 * MB), "330 / 512 MB")
+        self.assertEqual(G.list_amount(330.99 * MB, 512.99 * MB), "330 / 512 MB")
+        self.assertEqual(G.list_amount(330.61 * 1024, 512 * 1024), "330 / 512 KB")
+        self.assertEqual(G.list_amount(330, 512), "330 / 512 B")
+        self.assertEqual(G.list_amount(512 * MB - 1, 512 * MB), "511 / 512 MB")
+        self.assertEqual(G.list_amount(513 * MB, 512 * MB), "512 / 512 MB")
+        self.assertEqual(G.list_amount(5.76 * GB - 1, 5.76 * GB), "5.75 / 5.76 GB")
+        self.assertEqual(G.list_amount(6 * GB, 5.76 * GB), "5.76 / 5.76 GB")
+        self.assertEqual(G.fmt_size(512 * MB), "512.00 MB")  # diğer pencerelerin biçimi değişmedi
+        self.assertEqual(G.fmt_speed(48.4 * MB), "48.40 MB/s")
+
+    def test_numbers_rounding_to_1024_move_to_next_unit(self):
+        # 1023.999 MB yuvarlanınca "1024 MB" değil "1 GB" olmalı (liste, hız paneli, boş alan)
+        MB, GB = 1024 ** 2, 1024 ** 3
+        self.assertEqual(G.list_size(1023.999 * MB), "1 GB")
+        self.assertEqual(G.list_size(1023.4 * MB), "1023.4 MB")
+        self.assertEqual(G.list_size(1023.6), "1 KB")
+        self.assertEqual(G.list_amount(1023.999 * MB, 1.5 * GB), "1 / 1.5 GB")
+        self.assertEqual(G.list_speed(1023.96 * 1024), "1 MB/s")
+        self.assertEqual(G.speed_parts(1023.96 * 1024), ("1.0", "MB/s"))
+        self.assertEqual(G.fmt_free(1023.7 * GB), "1.0 TB")
+        self.assertEqual(G.fmt_free(99.97 * GB), "100 GB")
+        self.assertEqual(G.fmt_free(86.4 * GB), "86.4 GB")
+
+    def test_numbers_kept_left_to_right_in_arabic(self):
+        self.assertEqual(G._ltr("5 MB/s"), "5 MB/s")
+        try:
+            G.i18n.set_language("ar")
+            self.assertEqual(G._ltr("5 MB/s"), "⁦5 MB/s⁩")
+        finally:
+            G.i18n.set_language("tr")
+
+    def test_free_space_read_does_not_block_ui(self):
+        # indirme klasörü erişilemeyen ağ sürücüsündeyse disk okuması arayüzü kilitlememeli
+        win = self.win
+        gate = threading.Event()
+        self.addCleanup(gate.set)
+        pump(2.0, lambda: not win._disk_busy)
+
+        def slow_usage(path):
+            gate.wait(10)
+            return shutil._ntuple_diskusage(100 * 1024 ** 3, 0, 86 * 1024 ** 3)
+        with mock.patch.object(G.shutil, "disk_usage", slow_usage):
+            start = time.monotonic()
+            win._update_disk()
+            win._update_disk()  # okuma sürerken ikinci iş parçacığı açılmaz
+            self.assertLess(time.monotonic() - start, 0.5)
+            self.assertTrue(win._disk_busy)
+            gate.set()
+            self.assertTrue(pump(3.0, lambda: not win._disk_busy))
+        win._last_sample = time.monotonic()
+        win._tick()  # sonuç sonraki tikte görünür
+        self.assertFalse(win.disk_box.isHidden())
+        self.assertEqual(win.disk_lbl.text(), "Boş alan: 86.0 GB")
+        win._disk_checked = 0.0
+        pump(0.1)
+
+    def test_speed_graph_kept_after_language_change(self):
+        win = self.win
+        win.sp_graph.push(12345)
+        win._retranslate()
+        pump(0.1)
+        self.assertEqual(win.sp_graph.samples[-1], 12345.0)
+        self.assertEqual(len(win.sp_graph.samples), G.SpeedGraph.SAMPLES)
+
+    def test_inactive_rows_show_dash_and_plain_numbers(self):
+        win, t = self.win, self.win.table
+        items = self._list_items()
+        items["stopped"].size, items["stopped"].done_bytes = 32 * 1024 ** 3, 14 * 1024 ** 3
+        win.refresh(force=True)
+        for key in ("stopped", "error", "completed"):
+            row = win._rows.index(items[key].id)
+            self.assertEqual(t.item(row, G.SPEED).text(), G.DASH, key)
+            self.assertEqual(t.item(row, G.ETA).text(), G.DASH, key)
+        row = win._rows.index(items["stopped"].id)
+        self.assertEqual(t.item(row, G.SIZE).text(), "32 GB")
+        self.assertEqual(t.item(row, G.STATUS).text(), "Durduruldu")
+        self.assertEqual(t.item(row, G.STATUS).data(G.DETAIL_ROLE), "%43 · 14 GB")
+        self.assertEqual(t.item(row, G.STATUS).data(G.TONE_ROLE), "muted")
+        row = win._rows.index(items["downloading"].id)
+        items["downloading"].status, items["downloading"].speed = "downloading", 0
+        win.refresh(force=True)
+        self.assertNotEqual(t.item(row, G.SPEED).text(), G.DASH)  # etkin satırda tire yok
+        # tire soluk renkte çizilir
+        row = win._rows.index(items["error"].id)
+        opt = G.QStyleOptionViewItem()
+        t.itemDelegateForColumn(G.SPEED).initStyleOption(opt, t.model().index(row, G.SPEED))
+        self.assertEqual(opt.palette.color(G.QPalette.Text), G.QColor(G.theme.T["muted"]))
+
+    def test_completed_subtitle_shows_when_it_finished(self):
+        now = time.time()
+        it = M.DownloadItem.__new__(M.DownloadItem)
+        it.category, it.status, it.task, it.done_bytes, it.resumable = "video", "completed", None, 0, False
+        stamp = lambda t: "STAMP"  # noqa: E731
+        for ts, want in ((now, ("bugün", "dün")), (now - 86400, ("dün", "bugün")), (now - 9 * 86400, ("STAMP",))):
+            it.extra = {"finished_at": ts}
+            sub = G.MainWindow._row_subtitle(it, stamp)
+            self.assertTrue(sub.startswith("Video · "), sub)
+            self.assertIn(sub[len("Video · "):].split(" ")[0], want, sub)  # gece yarısı sınırında bir gün kayabilir
+        it.extra = {"finished_at": now}
+        self.assertRegex(G.MainWindow._row_subtitle(it, stamp), r"Video · (bugün|dün) \d\d:\d\d$")
+
+    def test_header_box_and_paused_folder_button(self):
+        win, t = self.win, self.win.table
+        items = self._list_items()
+        h = t.horizontalHeader()
+        accent = G.QColor(G.theme.T["accent"]).rgb()
+
+        def has_accent():
+            img = h.viewport().grab().toImage()
+            return any(img.pixel(x, y) == accent for x in range(h.sectionSize(G.SEL)) for y in range(img.height()))
+        win.table.clearSelection()
+        self.assertFalse(has_accent())
+        win.select_all()
+        self.assertTrue(has_accent())  # tümü seçili: kutu işaretli
+        row = win._rows.index(items["stopped"].id)
+        names = t.item(row, G.ACTIONS).data(G.ACTIONS_ROLE)
+        self.assertEqual(names, ("play", "folder", "more"))
+        rects = G.ActionDelegate.rects(t.visualRect(t.model().index(row, G.ACTIONS)), names, t.fontMetrics(),
+                                       t.layoutDirection())
+        cell = t.visualRect(t.model().index(row, G.ACTIONS))
+        self.assertTrue(all(cell.contains(r) for r in rects.values()))
+        self.assertFalse(rects["play"].intersects(rects["folder"]) or rects["folder"].intersects(rects["more"]))
+        win.table.clearSelection()
 
     def test_broken_saved_values_do_not_break_the_list(self):
         win, t = self.win, self.win.table
@@ -1197,6 +1337,220 @@ class GuiTests(unittest.TestCase):
             for d in list(self.win.progress_dialogs.values()):
                 d.close()
             self.win.mgr.remove(it.id, False)
+
+    def test_search_filters_list_by_file_name(self):
+        from PySide6.QtTest import QTest
+        win = self.win
+        self.addCleanup(lambda: win.search_box.edit.setText(""))
+        items = self._list_items()
+        ist = win.mgr.add_http(self.s.url("/ist"), os.path.join(TMP, "liste", "İstanbul.bin"), start=False)
+        ist.status = "stopped"
+        win.refresh(force=True)
+        edit = win.search_box.edit
+        counts = lambda: [win.tree.topLevelItem(0).data(0, G.COUNT_ROLE)]  # noqa: E731
+        before = counts()
+        self.assertEqual(len(win._visible), 5)
+        edit.setText("A.BIN")  # büyük/küçük harf fark etmez
+        self.assertEqual(win._visible, [items["stopped"].id])
+        self.assertEqual(win._rows, [("Bekleyen", 1), items["stopped"].id])  # gruplama aramayla birlikte çalışır
+        self.assertEqual(win.page_sub.text(), "1 indirme, 0 tanesi etkin")
+        self.assertEqual(counts(), before)  # yan menü sayıları aramadan etkilenmez
+        edit.setText("ist")  # noktalı İ, "i" yazınca da bulunur
+        self.assertEqual(win._visible, [ist.id])
+        edit.setText("yok-boyle-dosya")
+        self.assertEqual(win._visible, [])
+        win.mgr.settings["list_sort"] = [G.NAME, False]  # sıralama aramayla birlikte
+        edit.setText(".bin")
+        self.assertEqual(win._visible, sorted(win._visible, key=lambda i: win.mgr.items[i].filename, reverse=True))
+        self.assertEqual(len(win._visible), 5)
+        win.mgr.settings["list_sort"] = None
+        QTest.keyClick(edit, G.Qt.Key_Escape)  # Esc kutuyu temizler
+        self.assertEqual(edit.text(), "")
+        self.assertEqual(len(win._visible), 5)
+        self.assertEqual(win.a_find.shortcut().toString(), "Ctrl+F")
+        win.a_find.trigger()
+        win.table.setFocus()
+        win.mgr.remove(ist.id, False)
+
+    def test_speed_panel_values_and_toggle(self):
+        win = self.win
+        items = self._list_items()
+        d = items["downloading"]
+        d.speed, d.size, d.done_bytes = 5 * 1024 * 1024, 600 * 1024 * 1024, 300 * 1024 * 1024
+        items["stopped"].in_queue, items["stopped"].status = True, "queued"
+        self.addCleanup(setattr, win.mgr, "_queue_running", {})
+        win.mgr._queue_running["main"] = False
+        win.refresh(force=True)
+        self.assertEqual((win.sp_big.text(), win.sp_unit.text()), ("5.0", "MB/s"))
+        self.assertEqual(win.sp_active.text(), "1")
+        self.assertEqual(win.sp_eta.text(), G.fmt_time(60))
+        self.assertEqual(win.q_state.text(), "Kuyruk durdu")
+        self.assertEqual(win.q_toggle.text(), "Başlat")
+        self.assertEqual(win.q_wait.text(), "1 bekliyor")
+        self.assertEqual(win.speed_lbl.text(), "İndirme: 5.0 MB/s")
+        win.mgr._queue_running["main"] = True
+        win.refresh()
+        self.assertEqual(win.q_state.text(), "Kuyruk çalışıyor")
+        self.assertEqual(win.q_toggle.text(), "Durdur")
+        d.speed = 0
+        win.refresh()
+        self.assertEqual((win.sp_big.text(), win.sp_unit.text(), win.sp_eta.text()), ("0", "B/s", "–"))
+        for _ in range(70):
+            win.sp_graph.push(1024)
+        self.assertEqual(len(win.sp_graph.samples), 60)
+        win.sp_graph.grab()  # çizim hatasız
+        # "Hız paneli" aç/kapat: ayar kaydedilir, panel gizlenir
+        self.assertTrue(win.mgr.settings["speed_panel"])
+        self.assertFalse(win.speed_panel.isHidden())
+        win.a_panel.setChecked(False)
+        self.assertFalse(win.mgr.settings["speed_panel"])
+        self.assertTrue(win.speed_panel.isHidden())
+        win.a_panel.setChecked(True)
+        self.assertFalse(win.speed_panel.isHidden())
+
+    def test_narrow_window_keeps_heading_and_speed_labels(self):
+        win = self.win
+        size, panel = win.size(), win.a_panel.isChecked()
+        self.addCleanup(lambda: win.resize(size))
+        self.addCleanup(lambda: win.a_panel.setChecked(panel))
+        win.a_panel.setChecked(True)
+        win.resize(900, 560)
+        pump(0.1)
+        self.assertEqual(win.size(), G.QSize(900, 560))
+        for label in (win.page_title, win.page_sub, win.sp_active, win.sp_eta):
+            self.assertTrue(label.isVisible())
+            self.assertGreater(label.width(), 0)
+            self.assertTrue(win.rect().contains(label.mapTo(win, label.rect().center())))
+        caps = {w.text(): w for w in win.speed_panel.findChildren(G.QLabel)}
+        for text in ("Etkin", "Kalan süre"):
+            self.assertTrue(caps[text].isVisible())
+            self.assertGreater(caps[text].width(), 0)
+        win.search_box.hide()
+        win.a_find.trigger()
+        pump(0.1)
+        self.assertTrue(win.search_box.isVisible())
+        self.assertIs(win.focusWidget(), win.search_box.edit)
+        win.table.setFocus()
+        win.resize(1280, 720)
+        pump(0.1)
+        self.assertTrue(win.search_box.isVisible())
+        self.assertEqual(win.search_box.maximumWidth(), 250)
+        self.assertEqual(win.speed_panel.layout().spacing(), 22)
+
+    def test_narrow_window_search_text_and_row_buttons(self):
+        win = self.win
+        size = win.size()
+        self.addCleanup(lambda: win.resize(size))
+        saved_cols = list(win.mgr.settings["hidden_columns"])
+
+        def restore_columns():
+            win.mgr.settings["hidden_columns"] = saved_cols
+            for c in range(G.NAME + 1, len(G.COLUMNS)):
+                win.table.setColumnHidden(c, c in saved_cols)
+            win._fit_columns()
+        self.addCleanup(restore_columns)
+        for c in (6, 7, 8, 9):  # ek sütunlar kapalıyken dosya adı sütunu en az NAME_MIN kalır
+            win._set_column(c, False)
+        win.resize(900, 560)
+        pump(0.1)
+        table = win.table
+        # arama yazısı varken kutu görünür kalır ve başlıkla üst üste binmez
+        win.search_box.edit.setText("mp4")
+        pump(0.1)
+        self.addCleanup(win.search_box.edit.clear)
+        self.assertTrue(win.search_box.isVisible())
+        self.assertFalse(win.search_box.geometry().intersects(win.page_title.geometry()))
+        self.assertGreaterEqual(win.page_title.width(), win.page_title.sizeHint().width())
+        win.search_box.edit.clear()
+        pump(0.1)
+        # satır düğmeleri yatay kaydırma olmadan görünür; sütun seçimi ayarda değişmez
+        saved = list(win.mgr.settings["hidden_columns"])
+        self.assertFalse(table.horizontalScrollBar().isVisible())
+        self.assertFalse(table.isColumnHidden(G.ACTIONS))
+        right = table.columnViewportPosition(G.ACTIONS) + table.columnWidth(G.ACTIONS)
+        self.assertLessEqual(right, table.viewport().width())
+        self.assertGreaterEqual(table.columnWidth(G.NAME), win.NAME_MIN - 1)
+        self.assertEqual(win.mgr.settings["hidden_columns"], saved)
+        win.resize(1500, 700)
+        pump(0.1)
+        self.assertFalse(table.isColumnHidden(G.ETA))
+        self.assertFalse(table.isColumnHidden(G.SPEED))
+        self.assertEqual(table.columnWidth(G.STATUS), win.STATUS_WIDTHS[1])
+        # kullanıcının gizlediği sütun geniş pencerede de gizli kalır
+        win._set_column(G.ETA, False)
+        self.addCleanup(lambda: win._set_column(G.ETA, True))
+        win.resize(1500, 701)
+        pump(0.1)
+        self.assertTrue(table.isColumnHidden(G.ETA))
+
+    def test_extension_indicator_states_and_retranslation(self):
+        win = self.win
+        tooltip = "Tarayıcı eklentisi son birkaç dakika içinde TurboDM ile konuştuysa bağlı görünür."
+        with mock.patch.object(server, "extension_seen", return_value=False) as seen:
+            win.refresh()
+            self.assertEqual(win.extension_lbl.text(), "Eklenti bağlı değil")
+            self.assertEqual(win.extension_dot.key, "muted")
+            self.assertTrue(win.extension_box.isVisible())
+            self.assertEqual(win.extension_box.toolTip(), tooltip)
+            seen.return_value = True
+            win.refresh()
+            self.assertEqual(win.extension_lbl.text(), "Eklenti bağlı")
+            self.assertEqual(win.extension_dot.key, "ok")
+            with mock.patch.object(win.extension_lbl, "setText", wraps=win.extension_lbl.setText) as put:
+                win.refresh()
+                put.assert_not_called()
+            win._retranslate()
+            pump(0.1)
+            labels = [w.text() for w in win.statusBar().findChildren(G.QLabel)
+                      if w.isVisibleTo(win.statusBar())]
+            self.assertEqual(labels.count("Eklenti bağlı"), 1)
+            seen.return_value = False
+            win.refresh()
+            self.assertEqual(win.extension_lbl.text(), "Eklenti bağlı değil")
+            self.assertEqual(win.extension_dot.key, "muted")
+
+    def test_extension_indicator_in_right_to_left_layout(self):
+        win = self.win
+        try:
+            G.i18n.set_language("ar")
+            G.i18n.apply_to_app(APP)
+            with mock.patch.object(server, "extension_seen", return_value=True):
+                win._retranslate()
+                pump(0.1)
+                self.assertEqual(win.extension_lbl.text(), G._t("Eklenti bağlı"))
+                self.assertEqual(win.extension_box.layoutDirection(), G.Qt.RightToLeft)
+                self.assertTrue(win.extension_box.isVisible())
+                self.assertGreater(win.extension_dot.mapTo(win, G.QPoint()).x(),
+                                   win.extension_lbl.mapTo(win, G.QPoint()).x())
+                if win.disk_box.isVisible():
+                    self.assertGreater(win.extension_box.x(), win.disk_box.x())
+        finally:
+            G.i18n.set_language("tr")
+            G.i18n.apply_to_app(APP)
+            win._retranslate()
+            pump(0.1)
+
+    def test_more_menu_and_status_bar(self):
+        win = self.win
+        self.addCleanup(lambda: win.search_box.edit.setText(""))
+        texts = [a.text() for a in win._more_btn.menu().actions() if not a.isSeparator()]
+        self.assertEqual(texts, ["Bitenleri Sil", "Gruplara ayır", "Hız paneli"])
+        menu_texts = [a.text() for m in win.menuBar().findChildren(G.QMenu) for a in m.actions()]
+        for a in (win.a_qstart, win.a_qstop, win.a_sched):  # üst menü çubuğundaki yerleri kalır
+            self.assertIn(a.text(), menu_texts)
+        self.assertEqual(win.ver_lbl.text(), f"v{G.VERSION}")
+        if not win.disk_box.isHidden():
+            self.assertTrue(win.disk_lbl.text().startswith("Boş alan: "))
+        win.statusBar().showMessage("geçici ileti", 0)  # geçici iletiler çalışmaya devam eder
+        self.assertEqual(win.statusBar().currentMessage(), "geçici ileti")
+        win.statusBar().clearMessage()
+        # dil değişince arama yazısı kalır, durum çubuğu widget'ları yinelenmez
+        win.search_box.edit.setText("abc")
+        win._retranslate()
+        pump(0.1)
+        self.assertEqual(win.search_box.edit.text(), "abc")
+        shown = [w.text() for w in win.statusBar().findChildren(G.QLabel) if w.isVisibleTo(win.statusBar())]
+        self.assertEqual(shown.count(f"v{G.VERSION}"), 1)
 
     def test_list_survives_restart(self):
         it = self.win.mgr.add_http(self.s.url("/arsiv.zip"), os.path.join(TMP, "dl", "kalici.zip"), start=False)

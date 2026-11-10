@@ -1,12 +1,12 @@
 {
   "manifest_version": 3,
   "name": "__MSG_extName__",
-  "version": "1.7.7",
+  "version": "1.7.8",
   "description": "__MSG_extDescription__",
   "default_locale": "en",
   "homepage_url": "https://github.com/wexaR-TDM/TurboDM",
   "icons": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
-  "permissions": ["downloads", "downloads.ui", "contextMenus", "cookies", "storage", "webRequest", "tabs", "nativeMessaging"],
+  "permissions": ["alarms", "downloads", "downloads.ui", "contextMenus", "cookies", "storage", "webRequest", "tabs", "nativeMessaging"],
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "background.js" },
   "content_scripts": [

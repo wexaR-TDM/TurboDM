@@ -1239,6 +1239,11 @@ class ExtensionTests(unittest.TestCase):
         self.assertEqual(S.claim(u), {"handle": False, "reason": "app"})
         S.leave_to_browser(u)
         self.assertEqual(S.claim(u), {"handle": False, "reason": "browser"})
+        # arayüz testleri önce koştuysa pencerenin /check işleyicisi kalmıştır (adrese gerçekten bağlanır): bu test
+        # yalnızca köprünün sahiplik kuralını sınar
+        saved = dict(S.handlers)
+        S.handlers.clear()
+        self.addCleanup(S.handlers.update, saved)
         srv = S.start(0)
         self.addCleanup(srv.shutdown)
         port = srv.server_address[1]
@@ -1762,6 +1767,53 @@ class BridgeTests(unittest.TestCase):
     def drain(self):
         while not server.requests.empty():
             server.requests.get()
+
+    def test_extension_seen_heartbeat_and_expiry(self):
+        headers = {"X-TurboDM": "1", "Origin": "chrome-extension://" + "a" * 32,
+                   "X-TurboDM-Ext": "1.7.8"}
+        with mock.patch.object(server, "_extension_last_seen", None), \
+                mock.patch.object(server.time, "monotonic", return_value=100) as clock, \
+                mock.patch.object(server, "check_extension"):
+            self.assertFalse(server.extension_seen())
+            self.assertEqual(self.req("/ping", {}, headers), (200, {"app": "TurboDM"}))
+            self.assertTrue(server.extension_seen())
+            clock.return_value = 249
+            self.assertTrue(server.extension_seen())
+            self.assertFalse(server.extension_seen(max_age=60))
+            clock.return_value = 251
+            self.assertFalse(server.extension_seen())
+
+    def test_extension_seen_ignores_other_and_rejected_requests(self):
+        origin = "chrome-extension://" + "a" * 32
+        cases = [({}, "/ping", "GET", 200),
+                 ({"X-TurboDM": "1"}, "/ping", "GET", 200),
+                 ({"X-TurboDM": "1", "X-TurboDM-Ext": "1.7.8"}, "/ping", "POST", 200),
+                 ({"Origin": origin}, "/ping", "GET", 200),
+                 ({"X-TurboDM": "1", "Origin": "https://example.com"}, "/ping", "POST", 200),
+                 ({"X-TurboDM": "1", "Origin": "chrome-extension://invalid"}, "/ping", "POST", 200),
+                 ({"X-TurboDM": "1", "Origin": origin, "Host": "example.com"}, "/ping", "POST", 403),
+                 ({"Origin": origin}, "/ping", "POST", 403),
+                 ({"X-TurboDM": "1", "Origin": origin}, "/missing", "GET", 404),
+                 ({"X-TurboDM": "1", "Origin": origin}, "/ping", "OPTIONS", 403)]
+        with mock.patch.object(server, "_extension_last_seen", None), \
+                mock.patch.object(server, "check_extension"):
+            for headers, route, method, code in cases:
+                with self.subTest(headers=headers, method=method, route=route):
+                    self.assertEqual(self.req(route, None if method == "GET" else {}, headers, method)[0], code)
+                    self.assertFalse(server.extension_seen())
+            self.assertEqual(self.req("/ping", [], {"X-TurboDM": "1", "Origin": origin})[0], 400)
+            self.assertFalse(server.extension_seen())
+
+    def test_extension_seen_download_requests_without_version(self):
+        headers = {"X-TurboDM": "1", "Origin": "chrome-extension://" + "b" * 32}
+        self.drain()
+        with mock.patch.object(server, "check_extension"):
+            for route in ("/add", "/claim"):
+                with self.subTest(route=route), mock.patch.object(server, "_extension_last_seen", None):
+                    body = {"url": "https://example.com/" + uuid.uuid4().hex}
+                    self.assertEqual(self.req(route, body, headers)[0], 200)
+                    self.assertTrue(server.extension_seen())
+        self.drain()
 
     def test_ping(self):
         self.assertEqual(self.req("/ping", method="GET"), (200, {"app": "TurboDM"}))

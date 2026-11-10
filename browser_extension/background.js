@@ -69,6 +69,29 @@ const NATIVE_HOST = "com.turbodm.app";
 const HEADERS = { "Content-Type": "application/json", "X-TurboDM": "1",
                   "X-TurboDM-Ext": chrome.runtime.getManifest().version };
 
+// Kalp atışı yalnızca yoklar; uygulamayı açtırmaz ve indirme yakalamaya dokunmaz.
+const HEARTBEAT = "turbodm-heartbeat";
+let heartbeatPending = null;
+function heartbeat() {
+  if (!heartbeatPending) {
+    heartbeatPending = fetch(API + "/ping", {
+      method: "POST", headers: HEADERS, body: "{}", signal: AbortSignal.timeout(5000),
+    }).catch(() => {}).finally(() => { heartbeatPending = null; });
+  }
+  return heartbeatPending;
+}
+function ensureHeartbeat() {
+  chrome.alarms.get(HEARTBEAT).then((alarm) => {
+    if (!alarm) return chrome.alarms.create(HEARTBEAT, { periodInMinutes: 1 });
+  }).catch(() => {});
+}
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === HEARTBEAT) heartbeat();
+});
+chrome.runtime.onStartup.addListener(() => { ensureHeartbeat(); heartbeat(); });
+ensureHeartbeat();
+heartbeat();
+
 function setAppSeen(up) {
   if (up !== appSeen) {
     appSeen = up;

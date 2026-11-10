@@ -7,6 +7,15 @@ Kurulu TurboDM'i güncellemek için: *Yardım → Güncellemeleri denetle*. · [
 <!-- Geliştirici notu: her yeni sürümde en üste "## x.y.z" bölümü eklenir (İngilizcesi RELEASE_NOTES.md'ye). "Güncellemeleri denetle"
      penceresinde o sürümün bölümü gösterilir (build.ps1 otomatik olarak latest.json'a koyar). -->
 
+## 1.7.31
+• Arama kutusu: sayfa başlığındaki kutuya yazarak listeyi dosya adına göre süzün (Ctrl+F ile açılır, Esc ile temizlenir)
+• Hız paneli: toplam hız, son 60 saniyenin hız grafiği, etkin indirme sayısı, kalan süre ve kuyruğu başlatıp durdurma, zamanlayıcı. İstemezseniz "Diğer" menüsünden kapatabilirsiniz
+• Durum çubuğu: tarayıcı eklentisinin TurboDM'e bağlı olup olmadığı, indirme klasöründeki boş alan, toplam indirme hızı ve sürüm
+• Listede sade sayılar (ör. 337 / 512 MB), boş hız ve süre hücrelerinde "–", bitenlerde ne zaman bittiği (ör. bugün 14:32), duraklatılan indirmede klasörü aç düğmesi; yenilenen simgeler ve başlıkta tümünü seç kutusu
+• Dar pencerede başlık ve düğmeler kaybolmuyor: önce arama kutusu ve düğme yazıları küçülür, gerekirse Hız ve Kalan Süre sütunları geçici olarak gizlenir
+• Ağ sürücüsündeki indirme klasörünün boş alanı okunurken pencere artık donmuyor
+(tarayıcı eklentisi 1.7.8: TurboDM'e dakikada bir "buradayım" der, böylece bağlantı durumu gösterilebilir)
+
 ## 1.7.30
 • Yenilenen indirme listesi: her indirme iki satırda; dosya türü simgesi, kalın dosya adı, altında kategori ve bağlantı sayısı. Durum sütununda her bağlantıyı ayrı gösteren parçalı ilerleme çubuğu
 • Satır düğmeleri: durdur, devam et, klasörü aç, Tekrar Dene ve daha fazla işlem için ⋯ doğrudan satırda

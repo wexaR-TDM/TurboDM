@@ -458,5 +458,20 @@
  "Tamamlanan": "Abgeschlossen",
  "Gruplara ayır": "Liste gruppieren",
  "{0} bağlantı": "Verbindungen: {0}",
- "kaldığı yerden sürer": "wird dort fortgesetzt, wo es aufhörte"
+ "kaldığı yerden sürer": "wird dort fortgesetzt, wo es aufhörte",
+ "Dosya ara": "Dateien suchen",
+ "Hız paneli": "Geschwindigkeitsanzeige",
+ "Toplam hız": "Gesamtgeschwindigkeit",
+ "Etkin": "Aktiv",
+ "Kuyruk çalışıyor": "Warteschlange läuft",
+ "Kuyruk durdu": "Warteschlange angehalten",
+ "{0} bekliyor": "Wartend: {0}",
+ "Başlat": "Starten",
+ "Boş alan: {0}": "Freier Speicher: {0}",
+ "İndirme: {0}": "Download: {0}",
+ "bugün {0}": "heute {0}",
+ "dün {0}": "gestern {0}",
+ "Eklenti bağlı": "Erweiterung verbunden",
+ "Eklenti bağlı değil": "Erweiterung nicht verbunden",
+ "Tarayıcı eklentisi son birkaç dakika içinde TurboDM ile konuştuysa bağlı görünür.": "Die Browser-Erweiterung wird als verbunden angezeigt, wenn sie in den letzten Minuten mit TurboDM kommuniziert hat."
 }

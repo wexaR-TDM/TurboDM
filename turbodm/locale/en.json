@@ -458,5 +458,20 @@
  "Tamamlanan": "Completed",
  "Gruplara ayır": "Group the list",
  "{0} bağlantı": "Connections: {0}",
- "kaldığı yerden sürer": "resumes where it left off"
+ "kaldığı yerden sürer": "resumes where it left off",
+ "Dosya ara": "Search files",
+ "Hız paneli": "Speed panel",
+ "Toplam hız": "Total speed",
+ "Etkin": "Active",
+ "Kuyruk çalışıyor": "Queue running",
+ "Kuyruk durdu": "Queue stopped",
+ "{0} bekliyor": "Waiting: {0}",
+ "Başlat": "Start",
+ "Boş alan: {0}": "Free space: {0}",
+ "İndirme: {0}": "Download: {0}",
+ "bugün {0}": "today {0}",
+ "dün {0}": "yesterday {0}",
+ "Eklenti bağlı": "Extension connected",
+ "Eklenti bağlı değil": "Extension disconnected",
+ "Tarayıcı eklentisi son birkaç dakika içinde TurboDM ile konuştuysa bağlı görünür.": "The browser extension appears connected if it has contacted TurboDM within the last few minutes."
 }

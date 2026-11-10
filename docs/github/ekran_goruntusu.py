@@ -1,3 +1,4 @@
+import math
 import os
 import sys
 import tempfile
@@ -56,6 +57,8 @@ for _ in range(15):
     app.processEvents()
     time.sleep(0.02)
 win.refresh(force=True)
+win.sp_graph.samples.extend((40 + 60 * abs(math.sin(i / 9)) + i % 5 * 3) * 1024 * 1024 for i in range(60))  # hız grafiği dolu görünsün
+win.sp_graph.samples[-1] = 109.6 * 1024 * 1024
 app.processEvents()
 win.grab().save(out)
 import shutil  # noqa: E402

@@ -1,18 +1,20 @@
 """PySide6 arayüzü: IDM tarzı ana pencere, indirme durumu penceresi, ayarlar, zamanlayıcı."""
 import os
 import re
+import shutil
 import subprocess
 import threading
 import time
 import urllib.parse
 import uuid
+from collections import deque
 from datetime import datetime
 
 from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, QRect, QRectF, QSize, QTime, QTimer, QUrl, Qt, Signal
-from PySide6.QtGui import QAction, QActionGroup, QColor, QDesktopServices, QFont, QFontMetrics, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtGui import QAction, QActionGroup, QColor, QDesktopServices, QFont, QFontMetrics, QIcon, QLinearGradient, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-    QFileDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
+    QFileDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLayout,
     QLineEdit, QMainWindow, QMenu, QMenuBar, QMessageBox, QPlainTextEdit, QPushButton, QSizePolicy, QSpinBox, QStyle,
     QSystemTrayIcon, QTableWidget, QTableWidgetItem, QTabWidget, QTimeEdit, QToolButton, QToolTip,
     QGroupBox, QProgressBar, QTextBrowser, QStyledItemDelegate, QStyleOptionViewItem,
@@ -68,6 +70,56 @@ def fmt_speed(b):
     return fmt_size(b) + "/s" if b and b > 0 else ""
 
 
+def _size_parts(n, decimals=2):
+    """(sayı, birim): sondaki gereksiz sıfırlar atılır ("512", "MB"; "5.76", "GB")."""
+    n = float(n or 0)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        num = f"{n:.0f}" if unit == "B" else f"{n:.{decimals}f}"
+        if float(num) < 1024 or unit == "TB":  # yuvarlanınca 1024 olan değer bir üst birime geçer ("1024 MB" değil)
+            return (num.rstrip("0").rstrip(".") if "." in num else num), unit
+        n /= 1024
+
+
+def list_size(n):
+    """Ana listede sade boyut: "512 MB", "5.76 GB"."""
+    return " ".join(_size_parts(n))
+
+
+def list_speed(b):
+    """Ana listede sade hız: "48.4 MB/s"; hız yoksa boş."""
+    return "{0} {1}/s".format(*_size_parts(b, 1)) if b and b > 0 else ""
+
+
+def list_pct(frac, done=False):
+    """Ana listede tam sayı yüzde, aşağı yuvarlanır; bitmeden %100 görünmez."""
+    v = int(frac * 100 + 1e-9)
+    return fmt_pct(100 if done else max(0, min(99, v)), 0)
+
+
+def list_amount(done, total):
+    """İlerleme miktarı ortak birimde; MB ve altında aşağı yuvarlanır."""
+    total = max(0, total or 0)
+    done = max(0, min(done or 0, total))
+    b, unit = _size_parts(total)
+    units = ("B", "KB", "MB", "GB", "TB")
+    index = units.index(unit)
+    if index <= 2:
+        while index and total < 1024 ** index:
+            index -= 1
+        unit = units[index]
+        scale = 1024 ** index
+        b = str(int(total / scale))
+        a = str(int(done / scale))
+        step = 1
+    else:
+        scale = 1024 ** index
+        a = f"{done / scale:.2f}".rstrip("0").rstrip(".")
+        step = 0.01
+    if float(a) > float(b) or (done < total and float(a) >= float(b)):
+        a = f"{max(0, float(b) - step):.2f}".rstrip("0").rstrip(".")
+    return f"{a} / {b} {unit}"
+
+
 def fmt_time(s):
     if s is None:
         return ""
@@ -79,6 +131,35 @@ def fmt_time(s):
     if s >= 60:
         return _t("{0}dk {1}sn").format(s // 60, s % 60)
     return _t("{0}sn").format(s)
+
+
+def speed_parts(b):
+    """Hız panelindeki büyük rakam ve küçük birim: (109.6, "MB/s")."""
+    n = float(b or 0)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        num = f"{n:.0f}" if unit == "B" else f"{n:.1f}"
+        if float(num) < 1024 or unit == "TB":
+            return num, unit + "/s"
+        n /= 1024
+
+
+def fmt_free(n):
+    """Boş disk alanı: "412 GB", küçükse bir ondalıkla "86.4 GB"."""
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        num = f"{n:.0f}" if n >= 99.95 or unit == "B" else f"{n:.1f}"
+        if float(num) < 1024 or unit == "TB":
+            return f"{num} {unit}"
+        n /= 1024
+
+
+def _ltr(s):
+    """Sağdan sola dillerde sayı + birim (109.6 MB/s) kendi içinde soldan sağa kalsın."""
+    return "⁦" + s + "⁩" if i18n.is_rtl() else s  # uygulamanın yönü dilden gelir (apply_to_app); her hücrede Qt'ye sorulmaz
+
+
+def _fold(s):
+    """Arama için büyük/küçük harf ve noktalı İ farkını yok sayan biçim."""
+    return s.casefold().replace("\u0307", "")
 
 
 def make_icon(color="#1e6fd9"):
@@ -2050,6 +2131,7 @@ SPEED = 5
 ACTIONS = 10  # başlıksız son sütun: satırdaki işlem düğmeleri (göster/gizle menüsünde yok)
 ROW_HEIGHT = 56
 GROUP_HEIGHT = 30
+DASH = "–"  # etkin olmayan satırda hız ve kalan süre
 CAT_ICONS = {"compressed": "compressed", "documents": "document", "music": "music", "programs": "program",
              "video": "video", "torrent": "magnet", "general": "general"}
 PROGRESS_ROLE = Qt.UserRole + 1   # durum hücresi: 0..1 ilerleme (yoksa None)
@@ -2107,6 +2189,61 @@ class NavDelegate(QStyledItemDelegate):
             p.restore()
 
 
+def draw_check_box(p, box, checked):
+    """Satırlardaki ve başlıktaki onay kutusu: işaretliyse vurgu renginde dolu, değilse çerçeveli."""
+    p.save()
+    p.setRenderHint(QPainter.Antialiasing)
+    if checked:
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(theme.T["accent"]))
+        p.drawRoundedRect(box, 4, 4)
+        pen = QPen(QColor("#ffffff"), 2)
+        pen.setCapStyle(Qt.RoundCap)
+        pen.setJoinStyle(Qt.RoundJoin)
+        p.setPen(pen)
+        p.setBrush(Qt.NoBrush)
+        path = QPainterPath(QPointF(box.x() + 4, box.y() + 8.5))
+        path.lineTo(box.x() + 7, box.y() + 11.5)
+        path.lineTo(box.x() + 12, box.y() + 5)
+        p.drawPath(path)
+    else:
+        p.setPen(QPen(QColor(theme.T["muted"]), 1.5))
+        p.setBrush(Qt.NoBrush)
+        p.drawRoundedRect(box.adjusted(0.75, 0.75, -0.75, -0.75), 3.5, 3.5)
+    p.restore()
+
+
+class CheckHeader(QHeaderView):
+    """Liste başlığı: ilk sütundaki tümünü seç kutusu satırlardakiyle aynı çizilir."""
+
+    def __init__(self, parent=None):
+        super().__init__(Qt.Horizontal, parent)
+        self.setSectionsClickable(True)  # QTableView'ın kendi başlığındaki varsayılanlar
+        self.setHighlightSections(True)
+        self.all_checked = False
+
+    def set_all_checked(self, on):
+        if on != self.all_checked:
+            self.all_checked = on
+            self.viewport().update()
+
+    def paintSection(self, p, rect, i):
+        super().paintSection(p, rect, i)
+        if i == SEL and rect.isValid():
+            c = QRectF(rect).center()
+            draw_check_box(p, QRectF(c.x() - 8, c.y() - 8, 16, 16), self.all_checked)
+
+
+class DashDelegate(QStyledItemDelegate):
+    """Hız ve kalan süre sütunu: boş hücrede gösterilen soluk tire."""
+
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        if option.text == DASH:
+            for role in (QPalette.Text, QPalette.HighlightedText):
+                option.palette.setColor(role, QColor(theme.T["muted"]))
+
+
 class CheckDelegate(QStyledItemDelegate):
     """Seçim sütunu: temaya göre çizilen, her iki temada da belirgin onay kutusu. Grup satırı da bu sütundan
     bütün satıra yayılır (İndiriliyor, Bekleyen, Tamamlanan)."""
@@ -2134,26 +2271,8 @@ class CheckDelegate(QStyledItemDelegate):
         style = opt.widget.style() if opt.widget else QApplication.style()
         style.drawControl(QStyle.CE_ItemViewItem, opt, p, opt.widget)  # zemin ve seçim
         c = QRectF(opt.rect).center()
-        box = QRectF(c.x() - 8, c.y() - 8, 16, 16)
+        draw_check_box(p, QRectF(c.x() - 8, c.y() - 8, 16, 16), checked)
         p.save()
-        p.setRenderHint(QPainter.Antialiasing)
-        if checked:
-            p.setPen(Qt.NoPen)
-            p.setBrush(QColor(theme.T["accent"]))
-            p.drawRoundedRect(box, 4, 4)
-            pen = QPen(QColor("#ffffff"), 2)
-            pen.setCapStyle(Qt.RoundCap)
-            pen.setJoinStyle(Qt.RoundJoin)
-            p.setPen(pen)
-            p.setBrush(Qt.NoBrush)
-            path = QPainterPath(QPointF(box.x() + 4, box.y() + 8.5))
-            path.lineTo(box.x() + 7, box.y() + 11.5)
-            path.lineTo(box.x() + 12, box.y() + 5)
-            p.drawPath(path)
-        else:
-            p.setPen(QPen(QColor(theme.T["muted"]), 1.5))
-            p.setBrush(Qt.NoBrush)
-            p.drawRoundedRect(box.adjusted(0.75, 0.75, -0.75, -0.75), 3.5, 3.5)
         if opt.state & QStyle.State_Selected:  # seçili satırın kenarındaki vurgu çizgisi
             p.setPen(Qt.NoPen)
             p.setBrush(QColor(theme.T["accent"]))
@@ -2282,7 +2401,7 @@ class StatusDelegate(QStyledItemDelegate):
         detail = index.data(DETAIL_ROLE) or ""
         p.setFont(opt.font)
         p.setPen(QColor(theme.T["muted"]))
-        p.drawText(top, Qt.AlignVCenter | Qt.AlignRight, detail)
+        p.drawText(top, Qt.AlignVCenter | Qt.AlignRight, detail)  # Arapçada Qt kendiliğinden yer değiştirir
         used = opt.fontMetrics.horizontalAdvance(detail) + 8 if detail else 0
         p.setFont(f)
         p.setPen(color)
@@ -2321,11 +2440,17 @@ class DownloadTable(QTableWidget):
     düğmeleri seçimi değiştirmez; tıklanınca action_clicked(satır, düğme adı) yayınlanır."""
 
     action_clicked = Signal(int, str)
+    resized = Signal()
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self.resized.emit()
 
     def __init__(self, *a):
         super().__init__(*a)
         self.action_hover = None
         self._action_pressed = None
+        self.setHorizontalHeader(CheckHeader(self))
         self.setMouseTracking(True)
 
     def _action_at(self, pos):
@@ -2402,6 +2527,208 @@ class DownloadTable(QTableWidget):
         return super().viewportEvent(e)
 
 
+class ElidedLabel(QLabel):
+    """Tam metni korur, dar alanda sonunu üç noktayla çizer."""
+
+    def paintEvent(self, _e):
+        p = QPainter(self)
+        text = self.fontMetrics().elidedText(self.text(), Qt.ElideRight, self.contentsRect().width())
+        self.style().drawItemText(p, self.contentsRect(), QStyle.visualAlignment(self.layoutDirection(), self.alignment()), self.palette(),
+                                  self.isEnabled(), text, QPalette.WindowText)
+
+
+class PageHeader(QWidget):
+    """Sayfa başlığı her zaman tam görünür; önce arama kutusu daralır ya da gizlenir, sonra düğmeler simgeye iner."""
+    SEARCH_MIN = 60
+
+    def _wanted(self):
+        return self.search.edit.hasFocus() or bool(self.search.edit.text())
+
+    def minimumSizeHint(self):
+        base = super().minimumSizeHint()
+        if not hasattr(self, "_narrow"):
+            return base
+        extra = self.layout().spacing() + self.SEARCH_MIN if self._wanted() else 0
+        return QSize(self._title + self._narrow + extra, base.height())
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self.fit()
+
+    def fit(self):
+        if not hasattr(self, "search"):
+            return
+        sp = self.layout().spacing()
+        title = self.title.sizeHint().width()
+        sums = []
+        for style in (Qt.ToolButtonTextBesideIcon, Qt.ToolButtonIconOnly):
+            for b in self.buttons[:-1]:
+                b.setToolButtonStyle(style)
+            sums.append(sum(b.sizeHint().width() + sp for b in self.buttons))
+        wide, narrow = sums
+        icons = self.width() - title < wide
+        if icons:
+            for b in self.buttons[:-1]:
+                b.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        else:
+            for b in self.buttons[:-1]:
+                b.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        room = self.width() - title - (narrow if icons else wide) - sp
+        self.title.setMinimumWidth(title)
+        self.search.setVisible(room >= self.SEARCH_MIN or self._wanted())
+        self.search.setMaximumWidth(max(self.SEARCH_MIN, min(250, room)))
+        if (title, narrow) != (getattr(self, "_title", None), getattr(self, "_narrow", None)):
+            self._title, self._narrow = title, narrow
+            self.updateGeometry()
+
+
+class SearchEdit(QLineEdit):
+    """Esc: yazıyı siler; yazı yoksa odağı listeye bırakır."""
+    escaped = Signal()
+    focusChanged = Signal(bool)
+
+    def focusInEvent(self, e):
+        super().focusInEvent(e)
+        self.focusChanged.emit(True)
+
+    def focusOutEvent(self, e):
+        super().focusOutEvent(e)
+        self.focusChanged.emit(False)
+
+    def keyPressEvent(self, e):
+        if e.key() == Qt.Key_Escape:
+            if self.text():
+                self.clear()
+            else:
+                self.escaped.emit()
+            e.accept()
+            return
+        super().keyPressEvent(e)
+
+
+class SearchBox(QFrame):
+    """Sayfa başlığındaki arama kutusu: büyüteç, yazı alanı ve Ctrl F rozeti."""
+
+    def __init__(self):
+        super().__init__()
+        self.setObjectName("searchBox")
+        self.setProperty("focus", False)
+        self.setMinimumWidth(60)
+        self.setMaximumWidth(250)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(10, 6, 8, 6)
+        lay.setSpacing(7)
+        self.icon_lbl = QLabel()
+        self.icon_lbl.setFixedSize(16, 16)
+        self.edit = SearchEdit()
+        self.edit.setObjectName("searchEdit")
+        self.edit.setPlaceholderText(_t("Dosya ara"))
+        self.edit.setMinimumWidth(0)
+        self.edit.installEventFilter(self)
+        self.badge = QLabel("Ctrl F")
+        self.badge.setObjectName("kbd")
+        self.edit.textChanged.connect(lambda t: self.badge.setVisible(not t and self.width() >= 170))
+        for w in (self.icon_lbl, self.edit, self.badge):
+            lay.addWidget(w)
+        lay.setStretch(1, 1)
+        self.refresh_icon()
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self.badge.setVisible(not self.edit.text() and e.size().width() >= 170)
+
+    def refresh_icon(self):
+        self.icon_lbl.setPixmap(theme.icon("search", "muted").pixmap(16, 16))
+
+    def eventFilter(self, obj, e):
+        if obj is self.edit and e.type() in (QEvent.FocusIn, QEvent.FocusOut):
+            self.setProperty("focus", e.type() == QEvent.FocusIn)
+            self.style().unpolish(self)
+            self.style().polish(self)
+        return super().eventFilter(obj, e)
+
+
+class SpeedGraph(QWidget):
+    """Son ~60 saniyenin toplam hızı: vurgu renginde çizgi, altı aşağı doğru solan dolgu."""
+    SAMPLES = 60
+
+    def __init__(self):
+        super().__init__()
+        self.setMinimumSize(0, 48)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.samples = deque([0.0] * self.SAMPLES, maxlen=self.SAMPLES)
+
+    def push(self, value):
+        self.samples.append(float(value or 0))
+        if self.isVisible():  # gizliyken çizim yapılmaz
+            self.update()
+
+    def paintEvent(self, _e):
+        w, h, pad = self.width(), self.height(), 4
+        peak = max(max(self.samples), 1.0)
+        n = len(self.samples)
+        pts = [QPointF(i * (w - 1) / (n - 1), h - pad - v / peak * (h - 2 * pad)) for i, v in enumerate(self.samples)]
+        line = QPainterPath(pts[0])
+        for pt in pts[1:]:
+            line.lineTo(pt)
+        area = QPainterPath(line)
+        area.lineTo(w - 1, h)
+        area.lineTo(0, h)
+        area.closeSubpath()
+        color = QColor(theme.T["accent"])
+        fade = QLinearGradient(0, 0, 0, h)
+        top = QColor(color)
+        top.setAlpha(110)
+        fade.setColorAt(0, top)
+        bottom = QColor(color)
+        bottom.setAlpha(0)
+        fade.setColorAt(1, bottom)
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.fillPath(area, fade)
+        pen = QPen(color, 2)
+        pen.setJoinStyle(Qt.RoundJoin)
+        pen.setCapStyle(Qt.RoundCap)
+        p.setPen(pen)
+        p.drawPath(line)
+
+
+class StatusDot(QWidget):
+    """Küçük durum noktası; rengi temadaki belirteçten gelir (ok, muted…)."""
+
+    def __init__(self, key="muted"):
+        super().__init__()
+        self.key = key
+        self.setFixedSize(9, 9)
+
+    def set_key(self, key):
+        if key != self.key:
+            self.key = key
+            self.update()
+
+    def paintEvent(self, _e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(theme.T[self.key]))
+        p.drawEllipse(0, 0, 9, 9)
+
+
+class SpeedPanel(QFrame):
+    """Hız paneli. Dar pencerede grafik ve aralıklar daralır, sayılar görünür kalır."""
+
+    def __init__(self):
+        super().__init__()
+        self.setObjectName("speedPanel")
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        if self.layout():
+            self.layout().setSpacing(12 if e.size().width() < 700 else 22)
+
+
 class MainWindow(QMainWindow):
     def __init__(self, mgr: Manager):
         super().__init__()
@@ -2416,6 +2743,10 @@ class MainWindow(QMainWindow):
         self._visible = []  # filtreye uyan indirmeler
         self._rows = []     # tablo satırları: indirme kimliği ya da grup satırı (başlık, sayı)
         self._filter = "all"
+        self._last_sample = 0.0  # hız grafiğinin son örnek zamanı
+        self._disk_checked = 0.0  # boş alanın son okunma zamanı
+        self._disk_free = None    # arka planda okunan boş alan (bayt); okunamadıysa None
+        self._disk_busy = False   # okuma sürüyor (erişilemeyen ağ sürücüsünde uzun sürebilir)
         self._last_clip = ""
         self._quitting = False
 
@@ -2478,6 +2809,11 @@ class MainWindow(QMainWindow):
         self.a_group.setCheckable(True)
         self.a_group.setChecked(bool(self.mgr.settings.get("group_list", True)))
         self.a_group.toggled.connect(self._set_grouping)
+        self.a_panel = QAction(_t("Hız paneli"), self)
+        self.a_panel.setCheckable(True)
+        self.a_panel.setChecked(bool(self.mgr.settings.get("speed_panel", True)))
+        self.a_panel.toggled.connect(self._set_speed_panel)
+        self.a_find = self._act(_t("Dosya ara"), None, self._focus_search, "Ctrl+F")
         self.a_batch = self._act(_t("Toplu indirme ekle…"), "add", self.batch_add_prompt, "Ctrl+Shift+N")
         self.a_export = self._act(_t("Listeyi dışa aktar…"), None, self.export_list)
         self.a_import = self._act(_t("Listeyi içe aktar…"), None, self.import_list)
@@ -2493,6 +2829,9 @@ class MainWindow(QMainWindow):
         self._new_btn.setIcon(theme.icon("plus", "#ffffff"))
         self._new_menu_btn.setIcon(theme.icon("chevron", "#ffffff"))
         self._more_btn.setIcon(theme.icon("chevron", "muted"))
+        self.search_box.refresh_icon()
+        self.sp_graph.update()
+        self._disk_icon.setPixmap(theme.icon("folder").pixmap(14, 14))
         for i in range(self.tree.topLevelItemCount()):
             top = self.tree.topLevelItem(i)
             for it in [top] + [top.child(j) for j in range(top.childCount())]:
@@ -2573,6 +2912,8 @@ class MainWindow(QMainWindow):
         self.table.setItemDelegateForColumn(NAME, NameDelegate(self.table))
         self.table.setItemDelegateForColumn(STATUS, StatusDelegate(self.table))
         self.table.setItemDelegateForColumn(ACTIONS, ActionDelegate(self.table))
+        for c in (ETA, SPEED):
+            self.table.setItemDelegateForColumn(c, DashDelegate(self.table))
         self.table.action_clicked.connect(self._row_action)
         self.table.setIconSize(QSize(18, 18))
         self.table.setHorizontalHeaderLabels(COLUMNS + [""])
@@ -2603,7 +2944,10 @@ class MainWindow(QMainWindow):
                      (9, 130), (ACTIONS, 125)):
             self.table.setColumnWidth(c, max(w, h.sectionSizeHint(c)) if c in (SIZE, ETA, SPEED) else w)  # uzun başlık kırpılmasın
         retry = self.table.fontMetrics().horizontalAdvance(ACTION_TEXT.get("retry", "")) + 20  # uzun çeviri sütundan taşmasın
-        self.table.setColumnWidth(ACTIONS, max(125, retry + ActionDelegate.BUTTON + ActionDelegate.GAP + 16))
+        step = ActionDelegate.BUTTON + ActionDelegate.GAP
+        self.table.setColumnWidth(ACTIONS, max(125, retry + step + 16, 3 * step + 12))  # en çok üç düğme ya da hap + "Diğer"
+        self._col_base = {c: self.table.columnWidth(c) for c in range(SEL, ACTIONS + 1)}
+        self._status_shrunk = False
         h.moveSection(h.visualIndex(SPEED), h.visualIndex(ETA))  # sıra: hız, kalan süre
         for c in range(NAME, ACTIONS):
             right = c in (SIZE, ETA, SPEED)
@@ -2619,6 +2963,8 @@ class MainWindow(QMainWindow):
         for c in st["hidden_columns"]:
             if isinstance(c, int) and NAME < c < len(COLUMNS):
                 self.table.setColumnHidden(c, True)
+        self._auto_hidden = set()
+        self.table.resized.connect(self._fit_columns)
 
         body = QWidget()
         lay = QHBoxLayout(body)
@@ -2631,10 +2977,39 @@ class MainWindow(QMainWindow):
         lay.addWidget(line)
         lay.addWidget(self._build_main_area(), 1)
         self.setCentralWidget(body)
+        self.addAction(self.a_find)
         self.sel_lbl = QLabel()
         self.statusBar().addPermanentWidget(self.sel_lbl)
         self.speed_lbl = QLabel()
         self.statusBar().addPermanentWidget(self.speed_lbl)
+        self.ver_lbl = QLabel(f"v{VERSION}")
+        self.statusBar().addPermanentWidget(self.ver_lbl)
+        self.extension_box = QWidget()
+        el = QHBoxLayout(self.extension_box)
+        el.setContentsMargins(8, 0, 0, 0)
+        el.setSpacing(5)
+        self.extension_dot = StatusDot()
+        self.extension_lbl = QLabel()
+        el.addWidget(self.extension_dot)
+        el.addWidget(self.extension_lbl)
+        self.extension_box.setToolTip(_t("Tarayıcı eklentisi son birkaç dakika içinde TurboDM ile konuştuysa bağlı görünür."))
+        self.statusBar().addWidget(self.extension_box)
+        self._extension_connected = None
+        self._update_extension()
+        self.disk_box = QWidget()  # solda: indirme klasörünün diskinde boş alan
+        dl = QHBoxLayout(self.disk_box)
+        dl.setContentsMargins(8, 0, 0, 0)
+        dl.setSpacing(5)
+        self._disk_icon = QLabel()
+        self._disk_icon.setStyleSheet("padding: 0")
+        self._disk_icon.setPixmap(theme.icon("folder").pixmap(14, 14))
+        self.disk_lbl = QLabel()
+        dl.addWidget(self._disk_icon)
+        dl.addWidget(self.disk_lbl)
+        self.statusBar().addWidget(self.disk_box)
+        self.disk_box.hide()
+        self._update_disk(wait=0.0 if self._disk_free is not None else 0.5)
+        self._update_panel()
         self.table.setFocus()  # açılışta odak "Yeni İndirme"ye gitmesin: Ctrl+A, Esc liste odaktayken çalışır
 
     def _build_sidebar(self):
@@ -2671,6 +3046,10 @@ class MainWindow(QMainWindow):
         row.addWidget(self._new_menu_btn)
         lay.addLayout(row)
         lay.addWidget(self.tree, 1)
+        sep = QFrame()  # Seçenekler satırının üstünde ince ayırıcı
+        sep.setObjectName("sideSep")
+        sep.setFixedHeight(1)
+        lay.addWidget(sep)
         options = QToolButton()
         options.setObjectName("sideButton")
         options.setDefaultAction(self.a_options)
@@ -2683,27 +3062,41 @@ class MainWindow(QMainWindow):
     def _build_main_area(self):
         """Sağ taraf: sayfa başlığı ve işlem düğmeleri, altında indirme listesi."""
         area = QWidget()
+        area.setMinimumWidth(640)  # bundan dar olursa hız paneli ve liste sütunları sığmaz
         lay = QVBoxLayout(area)
         lay.setContentsMargins(22, 18, 22, 0)
         lay.setSpacing(14)
-        head = QHBoxLayout()
+        header = PageHeader()
+        head = QHBoxLayout(header)
+        head.setContentsMargins(0, 0, 0, 0)
+        head.setSizeConstraint(QLayout.SetNoConstraint)
         head.setSpacing(8)
+        header.buttons = []
         titles = QVBoxLayout()
         titles.setSpacing(0)
-        self.page_title = QLabel()
+        self.page_title = ElidedLabel()
         self.page_title.setObjectName("pageTitle")
-        self.page_sub = QLabel()
+        self.page_sub = ElidedLabel()
         self.page_sub.setObjectName("pageSub")
         for w in (self.page_title, self.page_sub):
             w.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)  # dar pencerede düğmeleri itmesin
             titles.addWidget(w)
         head.addLayout(titles, 1)
+        self.search_box = SearchBox()
+        header.search = self.search_box
+        header.title = self.page_title
+        self.search_box.edit.textChanged.connect(lambda _x: self.refresh())
+        self.search_box.edit.textChanged.connect(lambda _x: QTimer.singleShot(0, header.fit))
+        self.search_box.edit.focusChanged.connect(lambda _on: QTimer.singleShot(0, header.fit))
+        self.search_box.edit.escaped.connect(lambda: self.table.setFocus())
+        head.addWidget(self.search_box)
         for a in (self.a_resume, self.a_stop, self.a_stop_all, self.a_delete):
             b = QToolButton()
             b.setObjectName("headButton")
             b.setDefaultAction(a)
             b.setIconSize(QSize(16, 16))
             b.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+            header.buttons.append(b)
             head.addWidget(b)
         self._more_btn = QToolButton()
         self._more_btn.setObjectName("headMenu")
@@ -2713,11 +3106,15 @@ class MainWindow(QMainWindow):
         self._more_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self._more_btn.setPopupMode(QToolButton.InstantPopup)
         menu = QMenu(self._more_btn)
-        for a in (self.a_delete_done, None, self.a_qstart, self.a_qstop, self.a_sched, None, self.a_group):
+        for a in (self.a_delete_done, None, self.a_group, self.a_panel):
             menu.addSeparator() if a is None else menu.addAction(a)
         self._more_btn.setMenu(menu)
         head.addWidget(self._more_btn)
-        lay.addLayout(head)
+        header.buttons.append(self._more_btn)
+        lay.addWidget(header)
+        self.speed_panel = self._build_speed_panel()
+        self.speed_panel.setVisible(bool(self.mgr.settings.get("speed_panel", True)))
+        lay.addWidget(self.speed_panel)
         frame = QFrame()
         frame.setObjectName("listFrame")
         fl = QVBoxLayout(frame)
@@ -2726,6 +3123,168 @@ class MainWindow(QMainWindow):
         lay.addWidget(frame, 1)
         return area
 
+    def _build_speed_panel(self):
+        """Toplam hız, son dakikanın grafiği, etkin sayısı, kalan süre ve kuyruk kartı."""
+        panel = SpeedPanel()
+        lay = QHBoxLayout(panel)
+        lay.setSizeConstraint(QLayout.SetNoConstraint)
+        lay.setContentsMargins(18, 12, 12, 12)
+        lay.setSpacing(22)
+
+        total = QWidget()
+        total.setMinimumWidth(120)
+        tl = QVBoxLayout(total)
+        tl.setContentsMargins(0, 0, 0, 0)
+        tl.setSpacing(2)
+        cap = QLabel(_t("Toplam hız"))
+        cap.setObjectName("panelCap")
+        tl.addWidget(cap)
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(5)
+        self.sp_big = QLabel("0")
+        self.sp_big.setObjectName("panelBig")
+        self.sp_unit = QLabel("B/s")
+        self.sp_unit.setObjectName("panelUnit")
+        row.addWidget(self.sp_big)
+        row.addWidget(self.sp_unit, 0, Qt.AlignBottom)
+        row.addStretch(1)
+        tl.addLayout(row)
+        lay.addWidget(total)
+
+        self.sp_graph = SpeedGraph()
+        lay.addWidget(self.sp_graph, 1)
+
+        self.sp_active = QLabel("0")
+        self.sp_eta = QLabel("–")
+        for caption, w in ((_t("Etkin"), self.sp_active), (_t("Kalan süre"), self.sp_eta)):
+            w.setObjectName("panelVal")
+            box = QWidget()
+            bl = QVBoxLayout(box)
+            bl.setContentsMargins(0, 0, 0, 0)
+            bl.setSpacing(2)
+            cap = QLabel(caption)
+            cap.setObjectName("panelCap")
+            bl.addWidget(cap)
+            bl.addWidget(w)
+            box.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Preferred)
+            lay.addWidget(box)
+
+        card = QFrame()
+        card.setObjectName("queueCard")
+        card.setMinimumWidth(200)
+        cl = QVBoxLayout(card)
+        cl.setContentsMargins(12, 9, 12, 10)
+        cl.setSpacing(8)
+        top = QHBoxLayout()
+        top.setSpacing(7)
+        self.q_dot = StatusDot()
+        self.q_state = QLabel()
+        self.q_state.setObjectName("queueState")
+        self.q_wait = QLabel()
+        self.q_wait.setObjectName("queueWait")
+        top.addWidget(self.q_dot)
+        top.addWidget(self.q_state)
+        top.addStretch(1)
+        top.addWidget(self.q_wait)
+        cl.addLayout(top)
+        btns = QHBoxLayout()
+        btns.setSpacing(6)
+        self.q_toggle = QPushButton()
+        self.q_sched = QPushButton(_t("Zamanlayıcı"))
+        for b in (self.q_toggle, self.q_sched):
+            b.setObjectName("miniButton")
+            b.setAutoDefault(False)
+            btns.addWidget(b, 1)
+        self.q_toggle.clicked.connect(self._panel_queue_toggle)
+        self.q_sched.clicked.connect(self.a_sched.trigger)
+        cl.addLayout(btns)
+        lay.addWidget(card)
+        return panel
+
+    def _panel_queue_toggle(self):
+        running = self.mgr.is_queue_running(self._current_queue())
+        (self.a_qstop if running else self.a_qstart).trigger()
+        self._update_panel()
+
+    def _update_panel(self):
+        """Panelin sayıları (yalnızca değişen metin yeniden yazılır)."""
+        def put(lbl, text):
+            if lbl.text() != text:
+                lbl.setText(text)
+        items = list(self.mgr.items.values())
+        num, unit = speed_parts(self.mgr.total_speed())
+        put(self.sp_big, num)
+        put(self.sp_unit, unit)
+        put(self.speed_lbl, _t("İndirme: {0}").format(_ltr(f"{num} {unit}")))
+        active = [i for i in items if i.status in ("downloading", "connecting")]
+        put(self.sp_active, str(len(active)))
+        etas = [e for e in (i.eta() for i in active) if e is not None]
+        put(self.sp_eta, fmt_time(max(etas)) if etas else "–")
+        q = self._current_queue()
+        running = self.mgr.is_queue_running(q)
+        self.q_dot.set_key("ok" if running else "muted")
+        put(self.q_state, _t("Kuyruk çalışıyor") if running else _t("Kuyruk durdu"))
+        waiting = sum(1 for i in items if i.in_queue and self.mgr.queue_of(i) == q and i.status == "queued")
+        put(self.q_wait, _t("{0} bekliyor").format(waiting))
+        put(self.q_toggle, _t("Durdur") if running else _t("Başlat"))
+
+    def _set_speed_panel(self, on):
+        self.mgr.settings["speed_panel"] = bool(on)
+        self.mgr.save()
+        self.speed_panel.setVisible(bool(on))
+        if on:
+            self._update_panel()
+
+    def _focus_search(self):
+        self.search_box.show()
+        self.search_box.edit.setFocus(Qt.ShortcutFocusReason)
+        self.search_box.edit.selectAll()
+        self.search_box.parentWidget().fit()
+
+    def _update_extension(self):
+        connected = server.extension_seen()
+        if connected != self._extension_connected:
+            self._extension_connected = connected
+            self.extension_lbl.setText(_t("Eklenti bağlı") if connected else _t("Eklenti bağlı değil"))
+            self.extension_dot.set_key("ok" if connected else "muted")
+
+    def _update_disk(self, wait=0.0):
+        """Durum çubuğunda indirme klasörünün diskindeki boş alan; okunamazsa gösterge gizlenir. Disk arka planda
+        okunur: erişilemeyen ağ sürücüsü arayüzü saniyelerce kilitlemesin. Sonuç sonraki tikte gösterilir
+        (wait: ilk okumada en çok bu kadar beklenir; yerel disk hemen görünür)."""
+        self._disk_checked = time.monotonic()
+        self._show_disk()
+        if self._disk_busy:
+            return
+        self._disk_busy = True
+        path = self.mgr.settings.get("download_root") or ""
+
+        def work(path=path):
+            free = None
+            try:
+                while path and not os.path.exists(path) and os.path.dirname(path) != path:
+                    path = os.path.dirname(path)  # klasör henüz yoksa var olan üst klasörün diski
+                free = shutil.disk_usage(path).free
+            except (OSError, ValueError):
+                pass
+            self._disk_free = free
+            self._disk_busy = False
+        th = threading.Thread(target=work, daemon=True)
+        th.start()
+        if wait:
+            th.join(wait)
+            self._show_disk()
+
+    def _show_disk(self):
+        if self._disk_free is None:
+            self.disk_box.hide()
+            return
+        text = _t("Boş alan: {0}").format(_ltr(fmt_free(self._disk_free)))
+        if self.disk_lbl.text() != text:
+            self.disk_lbl.setText(text)
+        self.disk_box.show()
+
     def _update_page_head(self):
         cur = self.tree.currentItem()
         title = cur.text(0) if cur else ""
@@ -2733,6 +3292,7 @@ class MainWindow(QMainWindow):
         sub = _t("{0} indirme, {1} tanesi etkin").format(len(self._visible), active)
         if self.page_title.text() != title:
             self.page_title.setText(title)
+            self.page_title.parentWidget().fit()
         if self.page_sub.text() != sub:
             self.page_sub.setText(sub)
 
@@ -2845,8 +3405,7 @@ class MainWindow(QMainWindow):
             if cell and not cell.data(GROUP_ROLE) and cell.checkState() != state:
                 cell.setCheckState(state)
         n, total = len(sel), len(self._visible)
-        head = self.table.horizontalHeaderItem(SEL)
-        head.setText("☑" if total and n == total else "☐")
+        self.table.horizontalHeader().set_all_checked(bool(total and n == total))
         if n > 1:
             size = sum(self.mgr.items[i].size or 0 for i in self.selected_ids())
             self.sel_lbl.setText(_t("{0} indirme seçili ({1})  ").format(n, fmt_size(size)))
@@ -2854,8 +3413,11 @@ class MainWindow(QMainWindow):
             self.sel_lbl.setText("")
 
     def refresh(self, force=False):
+        self._update_extension()
         self._update_nav_counts()
-        ids = self._sorted_ids([i for i in self.mgr.order if self._match(self.mgr.items[i])])
+        q = _fold(self.search_box.edit.text().strip())
+        ids = self._sorted_ids([i for i in self.mgr.order if self._match(self.mgr.items[i])
+                                and (not q or q in _fold(self.mgr.items[i].filename))])
         rows = self._layout_rows(ids)
         self._visible = ids
         if force or rows != self._rows:
@@ -2866,6 +3428,7 @@ class MainWindow(QMainWindow):
             if isinstance(iid, str):
                 self._update_row(r, self.mgr.items[iid])
         self._update_page_head()
+        self._update_panel()
 
     def _layout_rows(self, ids):
         """Tablo satırları: gruplama açıksa her grubun başında (başlık, sayı) satırı; boş grup gösterilmez."""
@@ -3026,15 +3589,13 @@ class MainWindow(QMainWindow):
     def _update_row(self, r, it):
         done, speed = self._smoothed(it)
         if it.status in ("downloading", "connecting") and it.size:
-            st = fmt_pct(done / it.size * 100, 2)
+            st = _ltr(list_pct(done / it.size))
             if it.status == "connecting" and it.error:
                 st = it.error
         elif it.status == "error":
             st = _t("Hata: {0}").format(it.error or "")
         else:
             st = STATUS_TEXT.get(it.status, it.status)
-            if it.status in ("stopped", "queued") and it.size and it.done_bytes:
-                st += f" ({fmt_pct(it.done_bytes / it.size * 100, 1)})"
         if it.kind == "torrent" and it.status in ("downloading", "seeding"):
             st += _t("  ·  {0} eş").format(it.peers)
         frac = (done / it.size if it.size and it.status in ("downloading", "connecting", "stopped", "queued") else None)
@@ -3050,13 +3611,21 @@ class MainWindow(QMainWindow):
         segs = self._bar_segments(it) if frac is not None else None
         if sc.data(SEG_ROLE) != segs:
             sc.setData(SEG_ROLE, segs)
-        detail = f"{fmt_size(done)} / {fmt_size(it.size)}" if frac is not None else ""
+        if frac is None:
+            detail = ""
+        elif it.status in ("stopped", "queued"):  # soluk "Durduruldu", sağda "%44 · 14.18 GB"
+            detail = _ltr(" · ".join([list_pct(frac)] + ([list_size(done)] if done else [])))
+        else:
+            detail = _ltr(list_amount(done, it.size))
         if sc.data(DETAIL_ROLE) != detail:
             sc.setData(DETAIL_ROLE, detail)
         stamp = lambda t: datetime.fromtimestamp(t).strftime("%d.%m.%Y %H:%M") if t else ""  # noqa: E731
         eta = (it.size - done) / speed if it.size and speed > 1 and it.status == "downloading" else None
-        vals = (it.filename, fmt_size(it.size) if it.size else "", st, fmt_time(eta),
-                fmt_speed(speed), stamp(it.last_try), it.description, stamp(it.added),
+        eta_txt, speed_txt = fmt_time(eta), list_speed(speed)
+        if it.status not in ("downloading", "connecting", "converting"):  # etkin değil: boş hücre yerine soluk tire
+            eta_txt, speed_txt = eta_txt or DASH, speed_txt or DASH
+        vals = (it.filename, _ltr(list_size(it.size)) if it.size else "", st, eta_txt,
+                _ltr(speed_txt) if speed_txt != DASH else DASH, stamp(it.last_try), it.description, stamp(it.added),
                 stamp(it.extra.get("finished_at")))
         for c, v in enumerate(vals, start=NAME):
             cell = self.table.item(r, c)
@@ -3102,6 +3671,8 @@ class MainWindow(QMainWindow):
             return ("retry", "more")
         if it.status == "converting":
             return ("more",)
+        if it.status == "stopped" and it.path:  # hedef klasör biliniyorsa duraklatılmışta da açılabilir
+            return ("play", "folder", "more")
         return ("play", "more")
 
     @staticmethod
@@ -3115,8 +3686,19 @@ class MainWindow(QMainWindow):
         elif it.status == "stopped" and it.done_bytes and it.resumable:
             parts.append(_t("kaldığı yerden sürer"))
         elif it.status == "completed" and it.extra.get("finished_at"):
-            parts.append(stamp(it.extra["finished_at"]))
+            parts.append(MainWindow._when(it.extra["finished_at"], stamp))
         return " · ".join(parts)
+
+    @staticmethod
+    def _when(ts, stamp):
+        """Bitiş zamanı: bugünse "bugün 14:32", dünse "dün 14:32", daha eskiyse tam tarih."""
+        t = datetime.fromtimestamp(ts)
+        days = (datetime.now().date() - t.date()).days
+        if days == 0:
+            return _t("bugün {0}").format(t.strftime("%H:%M"))
+        if days == 1:
+            return _t("dün {0}").format(t.strftime("%H:%M"))
+        return stamp(ts)
 
     def _status_icon(self, it):
         return theme.status_icon(it.status)
@@ -3169,9 +3751,14 @@ class MainWindow(QMainWindow):
             self._handle_external(server.requests.get())
         self.refresh()
         sp = self.mgr.total_speed()
-        active = sum(1 for i in self.mgr.items.values() if i.status in ("downloading", "connecting"))
-        q = _t("  ·  Kuyruk çalışıyor") if any(self.mgr.is_queue_running(x["id"]) for x in self.mgr.queues()) else ""
-        self.speed_lbl.setText(_t("Etkin: {0}   ·   Toplam hız: {1}{2}").format(active, fmt_speed(sp) or '0 B/s', q))
+        now = time.monotonic()
+        if now - self._last_sample >= 1.0:  # grafik saniyede bir örnek alır
+            self._last_sample = now
+            self.sp_graph.push(sp)
+        if now - self._disk_checked >= 12:
+            self._update_disk()
+        else:
+            self._show_disk()  # arka plandaki okumanın sonucu (yalnızca değişen yazı yeniden yazılır)
         self.tray.setToolTip(f"{APP_NAME}\n{fmt_speed(sp) or _t("Boşta")}")
 
     def _complete_dialog(self, it):
@@ -3659,7 +4246,8 @@ class MainWindow(QMainWindow):
     def _retranslate(self):
         filt, sel = self._filter, set(self.selected_ids())
         old_actions = [v for k, v in vars(self).items() if k.startswith("a_") and isinstance(v, QAction)]
-        for w in (self.sel_lbl, self.speed_lbl):
+        search, samples = self.search_box.edit.text(), self.sp_graph.samples
+        for w in (self.sel_lbl, self.speed_lbl, self.ver_lbl, self.extension_box, self.disk_box):
             self.statusBar().removeWidget(w)
             w.deleteLater()
         self.setMenuBar(QMenuBar(self))  # eski menü çubuğu (ve menüleri) silinir
@@ -3680,6 +4268,8 @@ class MainWindow(QMainWindow):
                     self.tree.setCurrentItem(it)
         self._filter = self.tree.currentItem().data(0, Qt.UserRole)  # seçili kuyruk silindiyse "Tüm İndirmeler"e dön
         self._visible, self._rows = [], []
+        self.search_box.edit.setText(search)  # arama yazısı dil değişince de kalır
+        self.sp_graph.samples = samples       # hız grafiği de sıfırlanmaz
         self.refresh(force=True)
         self._select_rows([r for r, iid in enumerate(self._rows) if iid in sel])
         for iid, d in list(self.progress_dialogs.items()):  # açık indirme pencereleri yeni dille
@@ -3740,6 +4330,42 @@ class MainWindow(QMainWindow):
         self.mgr.settings["hidden_columns"] = sorted(hidden)
         self.table.setColumnHidden(col, not visible)
         self.mgr.save()
+        self._fit_columns()
+
+    NAME_MIN = 170       # dosya adı sütununun dar pencerede korunan genişliği
+    STATUS_WIDTHS = (140, 235)
+
+    def _fit_columns(self):
+        """Dar pencerede satır düğmeleri yatay kaydırma olmadan görünsün: önce Durum sütunu daralır, yetmezse sırayla
+        Kalan süre ve Hız sütunları geçici gizlenir (ayardaki sütun seçimi değişmez, pencere genişleyince geri gelir)."""
+        t = self.table
+        if getattr(self, "_fitting", False) or not hasattr(self, "_auto_hidden"):
+            return
+        user = {c for c in self.mgr.settings.get("hidden_columns", []) if isinstance(c, int)}
+        avail = t.viewport().width()
+        lo, hi = self.STATUS_WIDTHS
+        shown = [c for c in range(SEL, ACTIONS + 1) if c not in user and c not in (NAME, STATUS)]
+        status_shown = STATUS not in user
+        choice = None
+        for auto in ((), (ETA,), (ETA, SPEED)):
+            others = sum(self._col_base[c] if t.isColumnHidden(c) else t.columnWidth(c) for c in shown if c not in auto)
+            width = avail - others - self.NAME_MIN
+            if not status_shown or width >= lo or auto == (ETA, SPEED):
+                choice = (set(auto), max(lo, min(hi, width)))
+                break
+        auto, status = choice
+        self._fitting = True
+        try:
+            for c in (ETA, SPEED):
+                hide = c in user or c in auto
+                if t.isColumnHidden(c) != hide:
+                    t.setColumnHidden(c, hide)
+            if status_shown and (status < hi or self._status_shrunk) and t.columnWidth(STATUS) != status:
+                t.setColumnWidth(STATUS, status)
+            self._status_shrunk = status < hi
+            self._auto_hidden = auto
+        finally:
+            self._fitting = False
 
     def batch_add_prompt(self):
         clip = QApplication.clipboard().text()
