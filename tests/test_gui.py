@@ -80,8 +80,13 @@ class GuiTests(unittest.TestCase):
     def test_add_download_via_dialog_and_progress_window(self):
         d = G.FileInfoDialog(self.win, self.s.url("/arsiv.zip"))
         d.show()
-        self.assertTrue(pump(10, lambda: "Devam ettirme" in d.size_lbl.text()), d.size_lbl.text())
+        self.assertTrue(pump(10, lambda: not d.resume_lbl.isHidden()), d.size_lbl.text())
+        self.assertEqual(d.resume_lbl.text(), "Devam ettirilebilir")
+        self.assertEqual(d.filename_lbl.text(), "arsiv.zip")
+        self.assertEqual(d.size_lbl.text(), G.fmt_size(len(self.data)))
         self.assertEqual(d.cat.currentData(), "compressed")
+        self.assertEqual(d.form.labelForField(d.cat).text(), "Kategori")
+        self.assertEqual(d.form.labelForField(d.desc).text(), "Açıklama")
         self.assertTrue(d.path_edit.text().endswith("Compressed"), "alan yalnızca klasör olmalı")
         d._go(True)
         it = [i for i in self.win.mgr.items.values() if i.url.endswith("arsiv.zip")][-1]
@@ -95,12 +100,111 @@ class GuiTests(unittest.TestCase):
         self.win.showNormal()
         for hint in (G.Qt.WindowMinimizeButtonHint, G.Qt.WindowMaximizeButtonHint, G.Qt.WindowCloseButtonHint):
             self.assertTrue(pd.windowFlags() & hint, f"başlık çubuğunda düğme yok: {hint}")
-        tabs = pd.findChild(QTabWidget)
-        self.assertEqual([tabs.tabText(i) for i in range(tabs.count())],
+        self.assertEqual([button.text() for button in pd.tabs.group.buttons()],
                          ["İndirme durumu", "Hız sınırlayıcı", "Bitince yapılacaklar"])
         self.assertTrue(pump(30, lambda: it.status == "completed"), it.error)
         self.assertEqual(open(it.path, "rb").read(), self.data)
         self.assertTrue(visible("QMessageBox"), "'İndirme tamamlandı' penceresi açılmadı")
+
+    def test_file_info_credentials_expand_collapse_preserves_fields(self):
+        from PySide6.QtTest import QTest
+        with mock.patch.object(G.FileInfoDialog, "_probe"):
+            d = G.FileInfoDialog(self.win, self.s.url("/arsiv.zip"))
+        d.show()
+        pump(0.1)
+        self.assertFalse(d.auth_toggle.isChecked())
+        self.assertTrue(d.auth_card.isHidden())
+        self.assertEqual(d.auth_toggle.accessibleName(), "Kimlik bilgisi kullan")
+        d.auth_toggle.setFocus()
+        QTest.keyClick(d.auth_toggle, G.Qt.Key_Space)
+        self.assertTrue(d.auth_card.isVisible())
+        username, password = d.username, d.password
+        username.setText("deneme")
+        password.setText("gizli parola")
+        self.assertEqual(password.echoMode(), G.QLineEdit.Password)
+        QTest.keyClick(d.auth_toggle, G.Qt.Key_Space)
+        self.assertTrue(d.auth_card.isHidden())
+        QTest.keyClick(d.auth_toggle, G.Qt.Key_Space)
+        self.assertIs(d.username, username)
+        self.assertIs(d.password, password)
+        self.assertEqual(username.text(), "deneme")
+        self.assertEqual(password.text(), "gizli parola")
+        self.assertTrue(d.auth_card.isVisible())
+
+    def test_file_info_credentials_are_forwarded_without_changing_headers(self):
+        import base64
+        headers = {"Referer": self.s.url("/"), "authorization": "Basic eski"}
+        with mock.patch.object(G.FileInfoDialog, "_probe"):
+            d = G.FileInfoDialog(self.win, self.s.url("/arsiv.zip"), headers)
+        self.assertEqual(d._request_headers(), headers)
+        d.auth_toggle.setChecked(True)
+        d.username.setText("deneme")
+        d.password.setText("gizli")
+        d.auth_toggle.setChecked(False)
+        with mock.patch.object(self.win.mgr, "add_http") as add_http:
+            d._create(os.path.join(TMP, "dl", "kimlik.zip"), False)
+        sent = add_http.call_args.args[3]
+        self.assertEqual(sent["Authorization"], "Basic " + base64.b64encode(b"deneme:gizli").decode("ascii"))
+        self.assertNotIn("authorization", sent)
+        self.assertEqual(sent["Referer"], headers["Referer"])
+        self.assertEqual(headers["authorization"], "Basic eski")
+        d.reject()
+
+    def test_file_info_card_pending_and_nonresumable_states(self):
+        with mock.patch.object(G.FileInfoDialog, "_probe"):
+            d = G.FileInfoDialog(self.win, self.s.url("/arsiv.zip"))
+        self.assertEqual(d.size_lbl.text(), "Sorgulanıyor…")
+        self.assertTrue(d.resume_lbl.isHidden())
+        d._apply_probe({"filename": "sunucu-adi.mp4", "size": None, "resumable": False})
+        self.assertEqual(d.filename_lbl.text(), "sunucu-adi.mp4")
+        self.assertEqual(d.size_lbl.text(), "Bilinmiyor")
+        self.assertEqual(d.resume_lbl.text(), "Devam ettirilemez")
+        self.assertEqual(d.resume_lbl.property("tone"), "warn")
+        self.assertTrue(d.form.isRowVisible(d.fmt))
+        self.assertEqual(d.cat.currentData(), "video")
+        d.reject()
+
+    def test_file_info_queue_checkbox_keeps_download_waiting(self):
+        with mock.patch.object(G.FileInfoDialog, "_probe"):
+            d = G.FileInfoDialog(self.win, self.s.url("/arsiv.zip"))
+        self.assertFalse(d.queue_check.isChecked())
+        d.queue_check.setChecked(True)
+        d.desc.setText("kuyruk denemesi")
+        with mock.patch.object(self.win, "show_progress") as progress:
+            d._go(True)
+        item = self.win.mgr.items[self.win.mgr.order[-1]]
+        self.assertEqual(item.description, "kuyruk denemesi")
+        self.assertTrue(item.in_queue)
+        self.assertEqual(item.status, "queued")
+        self.assertIsNone(item.task)
+        progress.assert_not_called()
+        self.win.mgr.remove(item.id, delete_file=False)
+
+    def test_file_info_footer_and_credentials_in_all_languages(self):
+        language = G.i18n.language()
+        try:
+            for code in ("tr", "en", "de", "fr", "es", "ar", "it"):
+                with self.subTest(language=code):
+                    G.i18n.set_language(code)
+                    G.i18n.apply_to_app(APP)
+                    with mock.patch.object(G.FileInfoDialog, "_probe"):
+                        d = G.FileInfoDialog(self.win, self.s.url("/arsiv.zip"))
+                    d.resize(480, 700)
+                    d.show()
+                    pump(0.1)
+                    self.assertEqual(d.layoutDirection(), G.Qt.RightToLeft if code == "ar" else G.Qt.LeftToRight)
+                    self.assertEqual(d.auth_toggle.property("rtl"), code == "ar")
+                    d.auth_toggle.setChecked(True)
+                    self.assertTrue(d.auth_card.isVisible())
+                    footer = d.findChild(G._DialogFooter)
+                    self.assertIsNotNone(footer)
+                    for button in footer.buttons:
+                        self.assertGreaterEqual(button.width(), button.minimumSizeHint().width())
+                    d.reject()
+                    pump(0.05)
+        finally:
+            G.i18n.set_language(language)
+            G.i18n.apply_to_app(APP)
 
     def test_complete_action_countdown_can_be_cancelled(self):
         self.s.files["/b.bin"] = os.urandom(2 * 1024 * 1024)
@@ -128,9 +232,117 @@ class GuiTests(unittest.TestCase):
             d.show()
             pump(0.2)
             d.close()
-        tabs = G.OptionsDialog(self.win).findChild(QTabWidget)
-        self.assertEqual([tabs.tabText(i) for i in range(tabs.count())],
+        dialog = G.OptionsDialog(self.win)
+        self.assertEqual([dialog.navigation.item(i).text() for i in range(dialog.navigation.count())],
                          ["Genel", "Bağlantı", "Video", "Torrent", "Kategoriler"])
+
+    def test_options_navigation_toggle_and_theme_save(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        from PySide6.QtWidgets import QDialog, QDialogButtonBox
+        before = G.theme.mode()
+        settings = dict(self.win.mgr.settings)
+        try:
+            with mock.patch.object(self.win.mgr, "settings", settings), \
+                    mock.patch.object(G.winassoc, "autostart_enabled", return_value=False), \
+                    mock.patch.object(G.winassoc, "set_autostart") as autostart, \
+                    mock.patch.object(self.win.mgr, "apply_settings") as apply_settings:
+                d = G.OptionsDialog(self.win)
+                d.show()
+                pump(0.1)
+                d.activateWindow()
+                d.navigation.setFocus()
+                pump(0.1)
+                QTest.keyClick(d.navigation, Qt.Key_Tab, Qt.ControlModifier)
+                self.assertEqual(d.pages.currentIndex(), 1)
+                QTest.keyClick(d.navigation, Qt.Key_Tab, Qt.ControlModifier | Qt.ShiftModifier)
+                self.assertEqual(d.pages.currentIndex(), 0)
+                for index in range(d.navigation.count()):
+                    rect = d.navigation.visualItemRect(d.navigation.item(index))
+                    QTest.mouseClick(d.navigation.viewport(), Qt.LeftButton, Qt.NoModifier, rect.center())
+                    self.assertEqual(d.pages.currentIndex(), index)
+                    self.assertEqual(d.pages.currentWidget().widget().findChild(G.QLabel, "settingsTitle").text(),
+                                     d.navigation.item(index).text())
+                d.navigation.setCurrentRow(0)
+                checked = d.clip.isChecked()
+                self.assertIsInstance(d.clip, G.ToggleSwitch)
+                self.assertEqual(d.clip.accessibleName(), d.clip.text())
+                d.clip.setFocus()
+                QTest.keyClick(d.clip, Qt.Key_Space)
+                self.assertEqual(d.clip.isChecked(), not checked)
+                d.retry.setChecked(False)
+                self.assertFalse(d.retry_n.isEnabled())
+                self.assertFalse(d.retry_d.isEnabled())
+                d.retry.setChecked(True)
+                self.assertTrue(d.retry_n.isEnabled())
+                self.assertTrue(d.retry_d.isEnabled())
+                d.retry_n.setValue(5)
+                d.retry_d.setValue(45)
+                selected = "light" if settings.get("theme") != "light" else "dark"
+                d.pages.currentWidget().ensureWidgetVisible(d.theme)
+                pump(0.1)
+                QTest.mouseClick(d.theme.group.button(d.theme.findData(selected)), Qt.LeftButton)
+                self.assertEqual(G.theme.mode(), selected)
+                self.assertEqual(sum(b.isChecked() for b in d.theme.group.buttons()), 1)
+                QTest.mouseClick(d.findChild(QDialogButtonBox).button(QDialogButtonBox.Ok), Qt.LeftButton)
+                self.assertEqual(d.result(), QDialog.Accepted)
+                self.assertEqual(settings["clipboard_monitor"], not checked)
+                self.assertEqual(settings["theme"], selected)
+                self.assertEqual((settings["auto_retry_count"], settings["auto_retry_delay"]), (5, 45))
+                apply_settings.assert_called_once_with()
+                autostart.assert_not_called()
+                restored = G.OptionsDialog(self.win)
+                self.assertEqual(restored.clip.isChecked(), not checked)
+                self.assertEqual(restored.theme.currentData(), selected)
+                restored.reject()
+        finally:
+            G.theme.apply(APP, before)
+
+    def test_options_cancel_restores_theme_and_settings(self):
+        before = G.theme.mode()
+        settings = dict(self.win.mgr.settings)
+        try:
+            d = G.OptionsDialog(self.win)
+            d.clip.toggle()
+            selected = "light" if d._theme_before != "light" else "dark"
+            d.theme.setCurrentIndex(d.theme.findData(selected))
+            self.assertEqual(G.theme.mode(), selected)
+            d.reject()
+            self.assertEqual(G.theme.mode(), d._theme_before)
+            self.assertEqual(self.win.mgr.settings, settings)
+        finally:
+            G.theme.apply(APP, before)
+
+    def test_options_translated_layout_and_sections(self):
+        from PySide6.QtCore import Qt
+        before = G.i18n.language()
+        direction = APP.layoutDirection()
+        try:
+            self.assertEqual(G._section_upper("İndirme"), "İNDİRME")
+            for lang in G.i18n.LANGUAGES:
+                G.i18n.set_language(lang)
+                G.i18n.apply_to_app(APP)
+                d = G.OptionsDialog(self.win)
+                d.resize(600, 440)
+                d.show()
+                pump(0.1)
+                self.assertEqual(d.layoutDirection(), Qt.RightToLeft if lang == "ar" else Qt.LeftToRight)
+                for index in range(d.navigation.count()):
+                    d.navigation.setCurrentRow(index)
+                    pump(0.1)
+                    scroll = d.pages.currentWidget()
+                    self.assertLessEqual(scroll.widget().width(), scroll.viewport().width())
+                    for row in scroll.widget().findChildren(G._SettingsRow):
+                        self.assertTrue(row.label.wordWrap())
+                        self.assertGreater(row.label.width(), 0)
+                        self.assertLessEqual(row.control.geometry().right(), row.width())
+                d.reject()
+                d.deleteLater()
+                pump()
+        finally:
+            G.i18n.set_language(before)
+            G.i18n.apply_to_app(APP)
+            APP.setLayoutDirection(direction)
 
     def test_update_check_download_verify_and_reject_corrupt(self):
         setup = os.urandom(500_000)
@@ -1276,7 +1488,7 @@ class GuiTests(unittest.TestCase):
             d._animate()
             self.assertEqual(d.pbar.maximum(), 0)  # kayan çubuk
             self.assertNotIn("%", d.lbl["done"].text())
-            self.assertNotIn("TB", d.table.item(0, 1).text())
+            self.assertNotIn("TB", d.table.item(0, 2).text())
             it.size = it.done_bytes * 2  # boyut öğrenilince yüzdeye döner
             d._animate()
             self.assertEqual(d.pbar.maximum(), 1000)
@@ -1284,6 +1496,269 @@ class GuiTests(unittest.TestCase):
         finally:
             it.task, it.status = None, "stopped"
             self.win.mgr.remove(it.id, False)
+
+    def _progress_item(self, name="ilerleme.zip", **fields):
+        it = self.win.mgr.add_http(self.s.url("/arsiv.zip"), os.path.join(TMP, "dl", name), start=False)
+        for key, value in fields.items():
+            setattr(it, key, value)
+        self.addCleanup(lambda: self.win.mgr.remove(it.id, False))
+        return it
+
+    def test_progress_tabs_details_and_buttons(self):
+        from PySide6.QtTest import QTest
+        it = self._progress_item()
+        dialog = G.ProgressDialog(self.win, it.id)
+        dialog.show()
+        self.addCleanup(lambda: dialog.close() if dialog in QApplication.topLevelWidgets() else None)
+        pump(0.1)
+        self.assertIsInstance(dialog.lim_on, G.ToggleSwitch)
+        self.assertIsInstance(dialog.oc["show_dialog"], G.ToggleSwitch)
+        for index in (1, 2, 0):
+            QTest.mouseClick(dialog.tabs.group.button(index), G.Qt.LeftButton)
+            self.assertEqual(dialog.pages.currentIndex(), index)
+            self.assertTrue(dialog.btn_folder.isVisible())
+            self.assertTrue(dialog.btn_toggle.isVisible())
+        dialog.activateWindow()
+        dialog.tabs.group.button(0).setFocus()
+        pump(0.05)
+        QTest.keyClick(dialog.tabs.group.button(0), G.Qt.Key_Tab, G.Qt.ControlModifier)
+        self.assertEqual(dialog.pages.currentIndex(), 1)
+        QTest.keyClick(dialog.lim_on, G.Qt.Key_Tab, G.Qt.ControlModifier | G.Qt.ShiftModifier)
+        self.assertEqual(dialog.pages.currentIndex(), 0)
+        dialog.btn_details.click()
+        self.assertTrue(dialog.details.isHidden())
+        self.assertEqual(dialog.btn_details.text(), "Ayrıntıları göster")
+        dialog.btn_details.click()
+        self.assertFalse(dialog.details.isHidden())
+        self.assertEqual(dialog.btn_details.text(), "Ayrıntıları gizle")
+        with mock.patch.object(G, "open_folder") as open_folder:
+            dialog.btn_folder.click()
+            open_folder.assert_called_once_with(it.path)
+        with mock.patch.object(self.win.mgr, "start") as start:
+            dialog.btn_toggle.click()
+            start.assert_called_once_with(it.id)
+        it.status = "downloading"
+        dialog.update_view()
+        with mock.patch.object(self.win.mgr, "stop") as stop:
+            dialog.btn_toggle.click()
+            stop.assert_called_once_with(it.id)
+
+    def test_progress_speed_presets_and_unit_conversion(self):
+        it = self._progress_item()
+        dialog = G.ProgressDialog(self.win, it.id)
+        self.addCleanup(lambda: dialog.close() if dialog in QApplication.topLevelWidgets() else None)
+        self.assertFalse(dialog.lim_kb.isEnabled())
+        dialog.lim_on.setChecked(True)
+        for index, expected, value, unit in ((0, 512, 512, 0), (1, 1024, 1, 1),
+                                              (2, 5120, 5, 1), (3, 10240, 10, 1)):
+            with self.subTest(index=index):
+                dialog.limit_presets.group.button(index).click()
+                self.assertEqual(dialog.lim_kb.value(), value)
+                self.assertEqual(dialog.limit_unit.currentIndex(), unit)
+                self.assertEqual(it.extra["speed_limit_kb"], expected)
+        dialog.limit_unit.setCurrentIndex(0)
+        self.assertEqual(dialog.lim_kb.value(), 10240)
+        self.assertEqual(it.extra["speed_limit_kb"], 10240)
+        dialog.lim_kb.setValue(1537)
+        dialog.limit_unit.setCurrentIndex(1)
+        self.assertAlmostEqual(dialog.lim_kb.value(), 1537 / 1024)
+        self.assertEqual(it.extra["speed_limit_kb"], 1537)
+        dialog.lim_kb.setValue(1.5)
+        self.assertEqual(it.extra["speed_limit_kb"], 1536)
+        dialog.lim_on.setChecked(False)
+        self.assertEqual(it.extra["speed_limit_kb"], 0)
+        self.assertFalse(dialog.limit_unit.isEnabled())
+        self.assertFalse(dialog.limit_presets.isEnabled())
+        dialog.lim_on.setChecked(True)
+        self.assertEqual(it.extra["speed_limit_kb"], 1536)
+
+    def test_progress_status_is_inside_percentage_card(self):
+        it = self._progress_item(size=200, done_bytes=50)
+        dialog = G.ProgressDialog(self.win, it.id)
+        self.addCleanup(lambda: dialog.close() if dialog in QApplication.topLevelWidgets() else None)
+        dialog.show()
+        pump(0.05)
+        state = dialog.lbl["status"]
+        self.assertIs(state.parentWidget(), dialog.percent_label.parentWidget())
+        self.assertTrue(state.wordWrap())
+        for status, error in (("downloading", None), ("stopped", None), ("error", "HTTP 403")):
+            with self.subTest(status=status):
+                it.status, it.error = status, error
+                dialog.update_view()
+                self.assertTrue(state.isVisible())
+                self.assertIn(G.STATUS_TEXT[status], state.text())
+                self.assertEqual(state.property("tone"), "bad" if error else "muted")
+                if error:
+                    self.assertIn(error, state.text())
+        self.assertFalse(any(label.text() == G.fmt_size(it.size)
+                             for label in dialog.findChildren(G.QLabel) if label.isVisible()))
+        self.assertIn(G.fmt_size(it.size), dialog.lbl["done"].text())
+
+    def test_segment_focus_distinguishes_keyboard_and_mouse(self):
+        from PySide6.QtTest import QTest
+        control = G.SegmentedControl()
+        self.addCleanup(control.deleteLater)
+        self.addCleanup(control.close)
+        control.addItem("Sistem", "auto")
+        control.addItem("Açık", "light")
+        control.show()
+        control.activateWindow()
+        pump(0.05)
+        first, second = control.group.button(0), control.group.button(1)
+        QTest.mouseClick(second, G.Qt.LeftButton)
+        self.assertEqual(control.currentData(), "light")
+        self.assertFalse(second.property("keyboardFocus"))
+        first.setFocus(G.Qt.BacktabFocusReason)
+        self.assertTrue(first.property("keyboardFocus"))
+        QTest.keyClick(first, G.Qt.Key_Space)
+        self.assertEqual(control.currentData(), "auto")
+        QTest.mouseClick(first, G.Qt.LeftButton)
+        self.assertFalse(first.property("keyboardFocus"))
+
+    def test_completion_migration_and_round_trip(self):
+        cases = (({}, "none"), ({"exit": True}, "exit"),
+                 ({"exit": True, "sleep": True}, "sleep"),
+                 ({"exit": True, "sleep": True, "shutdown": True}, "shutdown"),
+                 ({"action": "none", "shutdown": True}, "none"))
+        for old, expected in cases:
+            with self.subTest(old=old):
+                data = dict(old, show_dialog=False, force=True)
+                item = M.DownloadItem(on_complete=data)
+                self.assertEqual(item.on_complete["action"], expected)
+                self.assertFalse(any(key in item.on_complete for key in ("exit", "sleep", "shutdown")))
+                restored = M.DownloadItem(**json.loads(json.dumps(item.to_dict())))
+                self.assertEqual(restored.on_complete, item.on_complete)
+                self.assertFalse(restored.on_complete["show_dialog"])
+                self.assertTrue(restored.on_complete["force"])
+                self.assertEqual(data, dict(old, show_dialog=False, force=True))
+
+    def test_progress_completion_cards_are_exclusive_and_saved(self):
+        it = self._progress_item(on_complete={"exit": True, "sleep": True, "shutdown": True})
+        dialog = G.ProgressDialog(self.win, it.id)
+        self.addCleanup(lambda: dialog.close() if dialog in QApplication.topLevelWidgets() else None)
+        self.assertEqual(it.on_complete["action"], "shutdown")
+        for key in ("exit", "sleep", "none", "shutdown"):
+            with self.subTest(action=key):
+                dialog.oc[key].click()
+                self.assertEqual(it.on_complete["action"], key)
+                self.assertEqual(sum(dialog.oc[k].isChecked() for k in ("none", "exit", "sleep", "shutdown")), 1)
+                self.assertEqual(dialog.oc["force"].isEnabled(), key == "shutdown")
+                with open(os.path.join(M.APP_DIR, "downloads.json"), encoding="utf-8") as stream:
+                    saved = next(row for row in json.load(stream) if row["id"] == it.id)
+                self.assertEqual(M.DownloadItem(**saved).on_complete["action"], key)
+        dialog.oc["shutdown"].click()
+        self.assertTrue(dialog.oc["shutdown"].isChecked())
+
+    def test_progress_dialog_follows_global_complete_dialog_until_changed(self):
+        # pencereyi açmak ayarı kalıcı yazmamalı: genel ayar sonradan değişince dosya onu izler
+        it = self._progress_item()
+        s = self.win.mgr.settings
+        old = s["show_complete_dialog"]
+        self.addCleanup(lambda: s.update(show_complete_dialog=old))
+        s["show_complete_dialog"] = True
+        dialog = G.ProgressDialog(self.win, it.id)
+        self.addCleanup(dialog.close)
+        self.assertTrue(dialog.oc["show_dialog"].isChecked())
+        self.assertNotIn("show_dialog", it.on_complete)
+        self.assertNotIn("show_dialog", it.to_dict()["on_complete"])
+        dialog.oc["show_dialog"].setChecked(False)
+        self.assertIs(it.on_complete["show_dialog"], False)
+
+    def test_completion_event_schedules_only_selected_action(self):
+        it = self._progress_item()
+        cases = (({"exit": True, "sleep": True, "shutdown": True}, "shutdown", True),
+                 ({"exit": True, "sleep": True}, "sleep", False),
+                 ({"action": "exit", "shutdown": True}, "exit", False),
+                 ({"action": "none", "shutdown": True}, None, False))
+        for choices, expected, force in cases:
+            it.on_complete = dict(choices, show_dialog=False, force=True)
+            with self.subTest(choices=choices), \
+                    mock.patch.object(self.win.mgr, "tick"), \
+                    mock.patch.object(self.win.mgr, "events", [("completed", it)]), \
+                    mock.patch.object(G, "PowerActionDialog") as countdown, \
+                    mock.patch.object(G, "bring_to_front"), \
+                    mock.patch.object(self.win, "_complete_dialog") as complete:
+                self.win._tick()
+                complete.assert_not_called()
+                if expected is None:
+                    countdown.assert_not_called()
+                else:
+                    countdown.assert_called_once_with(self.win, expected, force,
+                                                     reason="İndirme tamamlandı: " + it.filename)
+
+    def test_completion_power_action_runs_only_once(self):
+        it = self._progress_item()
+        it.on_complete = {"action": "shutdown", "force": True, "show_dialog": False}
+        for expected_calls in (1, 0):  # ikinci tamamlanmada (yeniden indirme) kapatma yeniden önerilmez
+            with mock.patch.object(self.win.mgr, "tick"),                     mock.patch.object(self.win.mgr, "events", [("completed", it)]),                     mock.patch.object(G, "PowerActionDialog") as countdown,                     mock.patch.object(G, "bring_to_front"),                     mock.patch.object(self.win, "_complete_dialog"):
+                self.win._tick()
+                self.assertEqual(countdown.call_count, expected_calls)
+        self.assertEqual(it.on_complete["action"], "none")
+        self.assertFalse(it.on_complete["force"])
+
+    def test_power_countdown_executes_once_and_cancel_stops_timer(self):
+        with mock.patch.object(self.win, "perform_power_action") as perform:
+            dialog = G.PowerActionDialog(self.win, "shutdown", True, seconds=1)
+            dialog._tick()
+            dialog._do()
+            perform.assert_called_once_with("shutdown", True)
+            self.assertFalse(dialog.timer.isActive())
+            cancelled = G.PowerActionDialog(self.win, "sleep", seconds=30)
+            cancelled.reject()
+            self.assertFalse(cancelled.timer.isActive())
+            perform.assert_called_once()
+
+    def test_progress_connection_table_retains_completed_segments(self):
+        it = self._progress_item(size=200, done_bytes=125, segments=[[0, 99, 100], [100, 199, 125]])
+        dialog = G.ProgressDialog(self.win, it.id)
+        self.addCleanup(lambda: dialog.close() if dialog in QApplication.topLevelWidgets() else None)
+        self.assertEqual(dialog.table.columnCount(), 4)
+        self.assertEqual(dialog.table.rowCount(), 2)
+        self.assertEqual(dialog.table.item(0, 3).text(), "Tamamlandı")
+        self.assertEqual(dialog.table.cellWidget(0, 1).value(), 1000)
+        self.assertEqual(dialog.table.cellWidget(1, 1).value(), 250)
+        self.assertEqual(dialog.table.item(0, 3).foreground().color(), G.QColor(G.theme.T["ok"]))
+        alignment = G.Qt.AlignLeading | G.Qt.AlignVCenter
+        self.assertEqual(dialog.table.horizontalHeader().defaultAlignment(), alignment)
+        for column in range(dialog.table.columnCount()):
+            self.assertEqual(dialog.table.item(0, column).textAlignment(), alignment)
+        self.assertEqual(dialog.table.cellWidget(0, 1).alignment(), alignment)
+        self.assertIn("/", dialog.lbl["done"].text())
+        it.status, it.error = "error", "HTTP 403"
+        dialog.update_view()
+        self.assertIn("HTTP 403", dialog.lbl["status"].text())
+        self.assertEqual(dialog.lbl["status"].property("tone"), "bad")
+
+    def test_progress_language_layout_and_theme(self):
+        old_theme = G.theme.mode()
+        it = self._progress_item()
+        try:
+            for lang in ("tr", "en", "de", "fr", "es", "ar", "it"):
+                G.i18n.set_language(lang)
+                G.i18n.apply_to_app(APP)
+                for mode in ("dark", "light"):
+                    G.theme.apply(APP, mode)
+                    dialog = G.ProgressDialog(self.win, it.id)
+                    try:
+                        dialog.show()
+                        pump(0.05)
+                        self.assertEqual(dialog.tabs.layoutDirection(), G.Qt.RightToLeft if lang == "ar" else G.Qt.LeftToRight)
+                        for index, text in enumerate(("İndirme durumu", "Hız sınırlayıcı", "Bitince yapılacaklar")):
+                            button = dialog.tabs.group.button(index)
+                            self.assertEqual(button.text(), G._t(text))
+                            self.assertGreaterEqual(button.width(), button.minimumSizeHint().width())
+                        dialog.tabs.setCurrentIndex(2)
+                        pump(0.05)
+                        if lang == "ar":
+                            self.assertGreater(dialog.oc["none"].x(), dialog.oc["exit"].x())
+                        self.assertFalse(dialog.grab().isNull())
+                    finally:
+                        dialog.close()
+                        pump(0.01)
+        finally:
+            G.i18n.set_language("tr")
+            G.i18n.apply_to_app(APP)
+            G.theme.apply(APP, old_theme)
 
     def test_tray_hint_shown_only_once(self):
         # pencere kapatılınca tepsiye iner; "arka planda çalışıyor" bildirimi yalnızca ilk sefer

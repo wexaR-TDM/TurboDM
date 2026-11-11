@@ -29,7 +29,7 @@ Multi-connection downloads · Video grabber · Torrent · Browser integration</p
 - **Resume:** even if the connection drops or the computer shuts down, the download continues from the same point.
 - **Learns the server's connection limit:** if a server allows only a few connections (e.g. file hosting sites), surplus connections back off without breaking the download; while things run smoothly a new connection is tried now and then, and speed increases if the server allows it.
 - Refreshes expired download addresses automatically where possible. HTTP, HTTPS and FTP.
-- An IDM-style download window: segmented progress bar of the connections, **speed limiter**, **"when done: shut down / sleep / exit"**.
+- An IDM-style download window: segmented progress bar of the connections, **speed limiter** (with presets), **"when done: shut down / sleep / exit"**.
 
 ### 🎬 Video downloads
 - The browser extension places a **"Download this video"** button over the video on the page; clicking it lists the qualities (4K, 1080p, audio only…) and the chosen quality comes ready in TurboDM's save window. The button can be dragged to any spot on the video; it doesn't appear on live streams.

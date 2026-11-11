@@ -145,10 +145,21 @@ def _retryable(error):
     return not any(d.strip(": ") and d.strip(": ") in e for d in disk)
 
 
+def normalize_completion(options):
+    """Eski işaretleri en güçlü tek bitiş eylemine dönüştür."""
+    result = dict(options) if isinstance(options, dict) else {}
+    actions = ("shutdown", "sleep", "exit")
+    if result.get("action") not in ("none", *actions):
+        result["action"] = next((key for key in actions if result.get(key)), "none")
+    for key in actions:
+        result.pop(key, None)
+    return result
+
+
 class DownloadItem:
     FIELDS = ("id", "kind", "url", "path", "category", "size", "resumable", "segments",
               "headers", "description", "added", "last_try", "status", "error",
-              "connections", "in_queue", "done_bytes", "source", "extra")
+              "connections", "in_queue", "done_bytes", "source", "extra", "on_complete")
 
     def __init__(self, **kw):
         self.id = kw.get("id") or uuid.uuid4().hex[:12]
@@ -170,6 +181,7 @@ class DownloadItem:
         self.in_queue = kw.get("in_queue", False)
         self.done_bytes = kw.get("done_bytes", 0)
         self.source = kw.get("source", "")          # torrent: magnet ya da .torrent kopyası
+        self.on_complete = normalize_completion(kw.get("on_complete"))
         # çalışma zamanı (kaydedilmez)
         self.task = None
         self.speed = 0.0
@@ -188,6 +200,7 @@ class DownloadItem:
 
     def to_dict(self):
         d = {k: getattr(self, k) for k in self.FIELDS}
+        d["on_complete"] = normalize_completion(self.on_complete)
         d["headers"] = _seal_headers(self.headers)
         d["extra"] = copy.deepcopy(self.extra)
         for k in ("cookies", "streams", "streams_t"):  # oturum çerezleri / geçici akış adresleri diske yazılmaz

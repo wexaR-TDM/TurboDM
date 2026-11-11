@@ -29,7 +29,7 @@
 - **Kaldığı yerden devam:** bağlantı kopsa, bilgisayar kapansa da indirme aynı yerden sürer.
 - **Sunucu bağlantı sınırını öğrenir:** sunucu az bağlantıya izin veriyorsa (ör. dosya paylaşım siteleri) fazla bağlantılar indirmeyi bozmadan çekilir; indirme sorunsuz giderken arada yeni bağlantı denenir, sunucu izin verirse hız artar.
 - Süresi dolan indirme adreslerini mümkünse kendiliğinden yeniler. HTTP, HTTPS ve FTP desteği.
-- IDM'deki gibi indirme penceresi: bağlantıların parçalı ilerleme çubuğu, **hız sınırlayıcı**, **"bitince bilgisayarı kapat / uyut / programdan çık"**.
+- IDM'deki gibi indirme penceresi: bağlantıların parçalı ilerleme çubuğu, **hız sınırlayıcı** (hazır değerlerle), **"bitince bilgisayarı kapat / uyut / programdan çık"**.
 
 ### 🎬 Video indirme
 - Tarayıcı eklentisi, sayfadaki videonun üstüne **"Bu videoyu indir"** düğmesi koyar; tıklayınca kaliteler listelenir (4K, 1080p, yalnızca ses…), seçilen kalite TurboDM'in kayıt penceresinde hazır gelir. Düğme sürüklenerek videonun istenen yerine taşınabilir; canlı yayınlarda çıkmaz.

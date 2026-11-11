@@ -7,6 +7,14 @@ To update an installed TurboDM: *Help → Check for updates*. · [Türkçe sür�
 <!-- Developer note: add a "## x.y.z" section at the top for every new version, in the same order as
      SURUM_NOTLARI.md. The update window shows the section of that version (build.ps1 puts it into latest.json). -->
 
+## 1.8.0
+• Redesigned Options window: a menu on the left with General, Connection, Video, Torrent and Categories; settings in titled groups, switches instead of checkboxes, and a System / Light / Dark theme choice
+• Redesigned download window: large percentage and speed, cards for downloaded, time left, connection count and resume support, and a collapsible connection table
+• Speed limiter: one-click presets (512 KB/s, 1 MB/s, 5 MB/s, 10 MB/s) and a KB/s or MB/s choice
+• "When done" is now a single choice: Do nothing, Exit TurboDM, Sleep or Shut down the computer. If several options were ticked before, the strongest one is kept (shut down, then sleep, then exit)
+• Redesigned New Download window: a file info card (size, whether it can be resumed), category, save location, description and a collapsible credentials section
+• The other windows (batch download, torrent, scheduler, checksum, update) got the same look
+
 ## 1.7.32
 • Refreshed app icon: the familiar blue circle and arrow are drawn more cleanly, and the line under the arrow is now split into parts (TurboDM downloads a file in parts). The same icon on the desktop, taskbar, setup wizard and browser extension
 

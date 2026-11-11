@@ -7,6 +7,14 @@ Kurulu TurboDM'i güncellemek için: *Yardım → Güncellemeleri denetle*. · [
 <!-- Geliştirici notu: her yeni sürümde en üste "## x.y.z" bölümü eklenir (İngilizcesi RELEASE_NOTES.md'ye). "Güncellemeleri denetle"
      penceresinde o sürümün bölümü gösterilir (build.ps1 otomatik olarak latest.json'a koyar). -->
 
+## 1.8.0
+• Yenilenen Seçenekler penceresi: solda Genel, Bağlantı, Video, Torrent ve Kategoriler menüsü; ayarlar başlıklı gruplar hâlinde, onay kutuları yerine açma/kapama anahtarları, tema için Sistem / Açık / Koyu seçimi
+• Yenilenen indirme penceresi: büyük yüzde ve hız, indirilen, kalan süre, bağlantı sayısı ve devam ettirilebilirlik kartları, açılır bağlantı tablosu
+• Hız sınırlayıcı: tek tıkla hazır değerler (512 KB/s, 1 MB/s, 5 MB/s, 10 MB/s), KB/s ya da MB/s seçimi
+• "Bitince yapılacaklar" artık tek seçim: Hiçbir şey yapma, TurboDM'den çık, Uyku moduna geç ya da Bilgisayarı kapat. Önceden birden fazla seçenek işaretliyse en güçlüsü korunur (kapat, sonra uyku, sonra çık)
+• Yenilenen Yeni İndirme penceresi: dosya bilgisi kartı (boyut, devam ettirilebilir mi), kategori, kaydedilecek yer, açıklama ve açılır kimlik bilgisi bölümü
+• Diğer pencereler (toplu indirme, torrent, zamanlayıcı, sağlama, güncelleme) de aynı görünüme kavuştu
+
 ## 1.7.32
 • Yenilenen uygulama simgesi: tanıdık mavi daire ve ok daha temiz çizildi; okun altındaki çizgi artık parçalı (TurboDM dosyayı parçalara bölerek indirir). Masaüstü, görev çubuğu, kurulum sihirbazı ve tarayıcı eklentisinde aynı simge
 

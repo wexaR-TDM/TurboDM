@@ -9,11 +9,11 @@ Windows ayarlardan açık/koyu değiştirildiğinde program açıkken de anında
 import math
 from string import Template
 
-from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, QTemporaryDir, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
 
 DARK = {
-    "dark": True,
+    "dark": True, "on_accent": "#ffffff",
     "bg": "#0c1016", "side": "#10151d", "surface": "#151b24", "surface2": "#1b2330", "alt": "#18202a", "input": "#111720",
     "border": "#232c3a", "border_soft": "#1b2330", "hover": "#1c2533",
     "text": "#e9edf4", "muted": "#94a0b2", "track": "#242e3d", "scroll": "#334055",
@@ -23,7 +23,7 @@ DARK = {
     "caption": "#10151d",
 }
 LIGHT = {
-    "dark": False,
+    "dark": False, "on_accent": "#ffffff",
     "bg": "#f3f5f9", "side": "#fafbfd", "surface": "#ffffff", "surface2": "#eef2f7", "alt": "#f8fafd", "input": "#ffffff",
     "border": "#dfe5ee", "border_soft": "#edf0f5", "hover": "#f1f5fa",
     "text": "#17202c", "muted": "#5a6779", "track": "#e3e9f2", "scroll": "#c3cddb",
@@ -91,6 +91,98 @@ QPushButton#miniButton { padding: 4px 10px; min-height: 16px; min-width: 0; }
 QFrame#listFrame { background: $surface; border: 1px solid $border; border-bottom: none;
     border-top-left-radius: 12px; border-top-right-radius: 12px; }
 
+QFrame#settingsSidebar { background: $side; border: none; }
+QListWidget#optionsNav { background: transparent; border: none; padding: 0; outline: 0; }
+QListWidget#optionsNav::item { padding: 11px 10px; border-radius: 8px; border: none; }
+QListWidget#optionsNav::item:hover { background: $hover; }
+QListWidget#optionsNav::item:selected { background: $accent_soft; color: $text; }
+QListWidget#optionsNav::item:focus { border: none; }
+QScrollArea#settingsScroll { background: $bg; border: none; }
+QWidget#settingsPage { background: $bg; }
+QLabel#settingsTitle { font-size: 23px; font-weight: 700; padding-bottom: 2px; }
+QLabel#settingsSection { color: $muted; font-size: 12px; font-weight: 700; }
+QLabel#settingsNote { color: $muted; }
+QFrame#settingsCard { background: $surface; border: 1px solid $border; border-radius: 10px; }
+QFrame#settingsDivider { background: $border; border: none; }
+QFrame#settingsFooter { background: $bg; border: none; border-top: 1px solid $border; }
+QDialog#optionsDialog QSpinBox, QDialog#optionsDialog QComboBox {
+    background: $input; color: $text; border: 1px solid $border; border-radius: 7px;
+    padding: 5px 8px; min-height: 18px; selection-background-color: $accent; }
+QDialog#optionsDialog QSpinBox:focus, QDialog#optionsDialog QComboBox:focus { border-color: $accent; }
+QDialog#optionsDialog QSpinBox:disabled, QDialog#optionsDialog QComboBox:disabled { color: $muted; background: $surface2; }
+QDialog#optionsDialog QPushButton:focus { border-color: $accent; }
+QFrame#segmentedControl { background: $surface2; border: 1px solid $border; border-radius: 8px; }
+QPushButton#segmentButton { background: transparent; border: 1px solid transparent; border-radius: 6px;
+    padding: 4px 10px; min-width: 0; color: $text; }
+QPushButton#segmentButton:hover { background: $hover; }
+QPushButton#segmentButton:checked { background: $accent; color: $on_accent; border-color: $accent; }
+QDialog QPushButton#segmentButton:focus { border-color: transparent; outline: 0; }
+QDialog QPushButton#segmentButton:checked:focus { border-color: $accent; }
+QDialog QPushButton#segmentButton[keyboardFocus="true"]:focus { border: 1px dashed $accent_text; }
+
+QFrame#progressCard { background: $surface; border: 1px solid $border; border-radius: 10px; }
+QScrollArea#transferScroll { background: transparent; border: none; }
+QScrollArea#transferScroll > QWidget > QWidget { background: $bg; }
+QLabel#transferFilename { font-size: 19px; font-weight: 700; }
+QLabel#categoryChip { background: $surface2; color: $accent_text; border-radius: 10px; padding: 3px 10px; }
+QLabel#transferPercent { font-size: 38px; font-weight: 700; }
+QLabel#transferSpeed { font-size: 23px; font-weight: 700; }
+QLabel#transferValue { font-size: 17px; font-weight: 600; }
+QLabel#transferSettingTitle { font-size: 16px; font-weight: 600; }
+QDialog#progressDialog QLabel[tone="ok"] { color: $ok; }
+QDialog#progressDialog QLabel[tone="bad"] { color: $bad; }
+QDialog#progressDialog QLabel[tone="muted"] { color: $muted; }
+QPushButton#transferLink { background: transparent; color: $accent; border: 1px solid transparent;
+    padding: 4px 2px; min-width: 0; }
+QPushButton#transferLink:hover { color: $accent2; background: $hover; }
+QPushButton#transferLink:focus { border-color: $accent; }
+QPushButton#completionAction { background: $surface2; border: 1px solid $border; border-radius: 9px; padding: 0; }
+QPushButton#completionAction:hover { background: $hover; border-color: $accent; }
+QPushButton#completionAction:checked { background: $accent_soft; border: 2px solid $accent; }
+QPushButton#completionAction:focus { border-color: $accent_text; }
+QDialog#progressDialog QDoubleSpinBox { background: $input; color: $text; border: 1px solid $border;
+    border-radius: 8px; padding: 9px 12px; min-height: 22px; }
+QDialog#progressDialog QDoubleSpinBox:focus { border-color: $accent; }
+QDialog#progressDialog QDoubleSpinBox:disabled { color: $muted; background: $surface2; }
+QTableWidget#connectionTable { background: $surface; border: 1px solid $border; border-radius: 9px; }
+QTableWidget#connectionTable::item { border: none; border-bottom: 1px solid $border_soft; padding: 3px 10px; }
+QTableWidget#connectionTable QHeaderView::section { background: $surface2; padding: 7px 10px; }
+QProgressBar#connectionProgress { min-height: 12px; border-radius: 5px; font-weight: 400; text-align: left; }
+QProgressBar#connectionProgress::chunk { border-radius: 5px; }
+QProgressBar#connectionProgress[tone="ok"]::chunk { background: $ok; }
+QMessageBox#transferMessage { background: $bg; }
+QMessageBox#transferMessage QLabel { padding: 8px; }
+
+QFrame#dialogCard { background: $surface; border: 1px solid $border; border-radius: 10px; }
+QScrollArea#dialogScroll { background: transparent; border: none; }
+QWidget#dialogPage { background: $bg; }
+QLabel#dialogFilename { font-size: 17px; font-weight: 700; }
+QLabel#dialogFileType { background: $surface2; border-radius: 8px; padding: 6px; }
+QLabel#dialogNote { color: $muted; }
+QLabel#dialogResume { font-weight: 600; }
+QLabel#dialogResume[tone="ok"], QLabel#dialogResult[tone="ok"] { color: $ok; }
+QLabel#dialogResume[tone="warn"] { color: $warn; }
+QLabel#dialogResult[tone="bad"] { color: $bad; }
+QDialog#fileInfoDialog QLineEdit, QDialog#fileInfoDialog QComboBox { background: $input; color: $text;
+    border: 1px solid $border; border-radius: 7px; min-height: 22px; padding: 8px 12px;
+    selection-background-color: $accent; selection-color: $on_accent; }
+QDialog#fileInfoDialog QLineEdit:focus, QDialog#fileInfoDialog QComboBox:focus { border-color: $accent; }
+QDialog#fileInfoDialog QComboBox { padding-right: 30px; }
+QDialog#fileInfoDialog QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right;
+    width: 26px; border: none; background: transparent; }
+QDialog#fileInfoDialog QComboBox::down-arrow { image: url("$spin_down"); width: 10px; height: 10px; }
+QPushButton#dialogBrowse { padding: 8px 12px; min-width: 22px; min-height: 24px; }
+QPushButton#dialogDisclosure { background: transparent; border: none; border-top: 1px solid $border;
+    border-radius: 0; padding: 14px 4px; text-align: left; }
+QPushButton#dialogDisclosure:checked { background: transparent; }
+QPushButton#dialogDisclosure[rtl="true"] { text-align: right; }
+QPushButton#dialogDisclosure:hover { background: $hover; }
+QPushButton#dialogDisclosure:focus { border: 1px solid $accent; border-radius: 6px; }
+QDialog QPushButton:focus { border-color: $accent; }
+QPushButton[role="primary"] { background: $accent; color: $on_accent; border-color: $accent; font-weight: 600; }
+QPushButton[role="primary"]:hover { background: $accent_hover; border-color: $accent_hover; }
+QPushButton[role="primary"]:disabled { background: $surface; color: $muted; border-color: $border_soft; }
+
 QTreeWidget#nav { background: transparent; border: none; padding: 0; outline: 0; }
 QTreeWidget#nav::item { padding: 7px 6px; border-radius: 8px; margin: 1px 0; border: none; }
 QTreeWidget#nav::item:hover { background: $hover; }
@@ -122,6 +214,37 @@ QLineEdit { background: $input; color: $text; border: 1px solid $border; border-
     selection-background-color: $accent; selection-color: #ffffff; }
 QLineEdit:focus { border: 1px solid $accent; }
 QLineEdit:read-only { background: $surface2; }
+
+QSpinBox, QDoubleSpinBox { background: $input; color: $text; border: 1px solid $border;
+    border-radius: 7px; padding: 5px 28px 5px 8px; min-height: 18px;
+    selection-background-color: $accent; selection-color: $on_accent; }
+QSpinBox:focus, QDoubleSpinBox:focus { border-color: $accent; }
+QSpinBox:disabled, QDoubleSpinBox:disabled { color: $muted; background: $surface2; }
+QDialog#optionsDialog QSpinBox, QDialog#progressDialog QDoubleSpinBox { padding-right: 28px; }
+QSpinBox::up-button, QDoubleSpinBox::up-button { subcontrol-origin: border; subcontrol-position: top right;
+    width: 24px; border: none; border-top-right-radius: 7px; background: transparent; margin: 1px; }
+QSpinBox::down-button, QDoubleSpinBox::down-button { subcontrol-origin: border; subcontrol-position: bottom right;
+    width: 24px; border: none; border-bottom-right-radius: 7px; background: transparent; margin: 1px; }
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover { background: $hover; }
+QSpinBox::up-button:pressed, QDoubleSpinBox::up-button:pressed,
+QSpinBox::down-button:pressed, QDoubleSpinBox::down-button:pressed { background: $accent_soft; }
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow { image: url("$spin_up"); width: 10px; height: 10px; }
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow { image: url("$spin_down"); width: 10px; height: 10px; }
+QSpinBox::up-arrow:disabled, QSpinBox::up-arrow:off,
+QDoubleSpinBox::up-arrow:disabled, QDoubleSpinBox::up-arrow:off { image: url("$spin_up_muted"); }
+QSpinBox::down-arrow:disabled, QSpinBox::down-arrow:off,
+QDoubleSpinBox::down-arrow:disabled, QDoubleSpinBox::down-arrow:off { image: url("$spin_down_muted"); }
+
+QCheckBox { spacing: 7px; }
+QCheckBox::indicator { width: 15px; height: 15px; border: 1px solid $muted;
+    border-radius: 4px; background: $input; }
+QCheckBox::indicator:checked { background: $accent; border-color: $accent; image: url("$check_mark"); }
+QCheckBox::indicator:indeterminate { background: $accent; border-color: $accent; image: url("$check_partial"); }
+QCheckBox::indicator:hover, QCheckBox::indicator:focus { border-color: $accent_text; }
+QCheckBox:focus::indicator { border: 2px solid $accent_text; width: 13px; height: 13px; }
+QCheckBox::indicator:disabled { border-color: $border; background: $surface2; }
+QCheckBox::indicator:checked:disabled, QCheckBox::indicator:indeterminate:disabled { background: $muted; }
 
 QProgressBar { background: $track; border: none; border-radius: 7px; text-align: center; color: $text; min-height: 16px; font-weight: 600; }
 QProgressBar::chunk { border-radius: 7px; background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 $accent, stop:1 $accent2); }
@@ -203,8 +326,9 @@ def apply(app, mode=None):
         T.clear()
         T.update(DARK if dark else LIGHT)
         app.setPalette(_palette(T))
-        app.setStyleSheet(QSS.substitute({k: v for k, v in T.items() if isinstance(v, str)}))
         _icon_cache.clear()
+        colors = {k: v for k, v in T.items() if isinstance(v, str)}
+        app.setStyleSheet(QSS.substitute(colors, **_stylesheet_images()))
         for w in app.topLevelWidgets():
             if w.isWindow() and w.isVisible():
                 style_titlebar(w)
@@ -285,6 +409,25 @@ class _TitleBarFilter(QObject):
 
 # ------------------------------------------------------------------ simgeler
 _icon_cache = {}
+_image_dir = None
+
+
+def _stylesheet_images():
+    """QSS simgeleri geçici klasörde tutulur; çıkışta kendiliğinden silinir."""
+    global _image_dir
+    if _image_dir is None:
+        _image_dir = QTemporaryDir()
+    if not _image_dir.isValid():
+        raise OSError("Geçici tema klasörü oluşturulamadı")
+    paths = {}
+    for key, name, color in (("spin_up", "spin_up", "text"), ("spin_down", "spin_down", "text"),
+                             ("spin_up_muted", "spin_up", "muted"), ("spin_down_muted", "spin_down", "muted"),
+                             ("check_mark", "check", "on_accent"), ("check_partial", "minus", "on_accent")):
+        path = _image_dir.filePath(f"{key}-{'dark' if T['dark'] else 'light'}.png")
+        if not icon(name, color).pixmap(32, 32).save(path):
+            raise OSError("Tema simgesi kaydedilemedi")
+        paths[key] = path.replace("\\", "/")
+    return paths
 
 
 def _pen(p, color, w=5.0):
@@ -315,6 +458,16 @@ def _draw(name, p, fg, ac):
         _pen(p, ac, 7)
         p.drawLine(32, 12, 32, 52)
         p.drawLine(12, 32, 52, 32)
+    elif name in ("spin_up", "spin_down", "check", "minus"):
+        _pen(p, ac, 8)
+        if name == "check":
+            _poly(p, [(14, 32), (27, 45), (50, 19)])
+        elif name == "minus":
+            p.drawLine(16, 32, 48, 32)
+        elif name == "spin_up":
+            _poly(p, [(12, 42), (32, 22), (52, 42)])
+        else:
+            _poly(p, [(12, 22), (32, 42), (52, 22)])
     elif name == "folder":
         _pen(p, fg)
         path = QPainterPath(QPointF(8, 16))
@@ -325,6 +478,22 @@ def _draw(name, p, fg, ac):
         path.lineTo(8, 52)
         path.closeSubpath()
         p.drawPath(path)
+    elif name == "link":
+        _pen(p, fg)
+        path = QPainterPath()
+        path.moveTo(26, 39)
+        path.lineTo(20, 45)
+        path.cubicTo(7, 58, -2, 40, 10, 30)
+        path.lineTo(21, 19)
+        path.cubicTo(27, 13, 35, 15, 39, 21)
+        path.moveTo(38, 25)
+        path.lineTo(44, 19)
+        path.cubicTo(57, 6, 66, 24, 54, 34)
+        path.lineTo(43, 45)
+        path.cubicTo(37, 51, 29, 49, 25, 43)
+        path.moveTo(23, 41)
+        path.lineTo(41, 23)
+        p.drawPath(path)
     elif name == "search":  # büyüteç (tek renk: vurgu rengi)
         _pen(p, ac, 6)
         p.drawEllipse(QPointF(27, 27), 16, 16)
@@ -333,6 +502,34 @@ def _draw(name, p, fg, ac):
         _fill(p, fg)
         for x in (14, 32, 50):
             p.drawEllipse(QPointF(x, 32), 5, 5)
+    elif name == "collapse":
+        _pen(p, fg)
+        _poly(p, [(18, 38), (32, 24), (46, 38)])
+    elif name in ("disclose", "disclose_rtl"):
+        _pen(p, fg)
+        _poly(p, [(38, 18), (24, 32), (38, 46)] if name == "disclose_rtl" else
+              [(26, 18), (40, 32), (26, 46)])
+    elif name == "download":
+        _pen(p, fg)
+        p.drawLine(32, 8, 32, 42)
+        _poly(p, [(20, 30), (32, 42), (44, 30)])
+        _poly(p, [(10, 44), (10, 54), (54, 54), (54, 44)])
+    elif name == "no_action":
+        _pen(p, fg)
+        p.drawEllipse(QRectF(10, 10, 44, 44))
+        p.drawLine(17, 47, 47, 17)
+    elif name == "power":
+        _pen(p, fg)
+        p.drawArc(QRectF(10, 10, 44, 44), 130 * 16, 280 * 16)
+        p.drawLine(32, 5, 32, 32)
+    elif name == "sleep":
+        _pen(p, fg)
+        path = QPainterPath()
+        path.moveTo(35, 8)
+        path.cubicTo(8, 5, 2, 43, 25, 53)
+        path.cubicTo(40, 60, 53, 48, 55, 36)
+        path.cubicTo(32, 48, 18, 25, 35, 8)
+        p.drawPath(path)
     elif name == "chevron":  # açılır menü oku
         _pen(p, ac, 7)
         _poly(p, [(14, 24), (32, 42), (50, 24)])
@@ -410,6 +607,17 @@ def _draw(name, p, fg, ac):
         elif name == "queue_stop":
             _fill(p, ac)
             p.drawRoundedRect(QRectF(38, 26, 20, 20), 4, 4)
+    elif name in ("exit", "exit_rtl"):
+        p.save()
+        if name == "exit_rtl":
+            p.translate(64, 0)
+            p.scale(-1, 1)
+        _pen(p, fg)
+        _poly(p, [(28, 8), (10, 8), (10, 56), (28, 56)])
+        _pen(p, ac, 5.5)
+        p.drawLine(24, 32, 56, 32)
+        _poly(p, [(44, 20), (56, 32), (44, 44)])
+        p.restore()
     elif name == "quit":
         _pen(p, fg)
         p.drawArc(QRectF(10, 12, 44, 44), 120 * 16, -300 * 16)
@@ -522,7 +730,7 @@ def icon(name, accent="accent"):
     if key in _icon_cache:
         return _icon_cache[key]
     ic = QIcon()
-    fg = T["muted"] if name.startswith("st_") else T["text"]
+    fg = T["on_accent"] if accent == "on_accent" else T["muted"] if name.startswith("st_") else T["text"]
     for px in (16, 20, 24, 32, 48, 64):
         pm = QPixmap(px, px)
         pm.fill(Qt.transparent)
