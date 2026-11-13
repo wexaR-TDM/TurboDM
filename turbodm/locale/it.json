@@ -495,5 +495,10 @@
  "İsteğe bağlı": "Facoltativo",
  "Kimlik bilgisi kullan": "Usa credenziali",
  "Dosya bilgisi": "Informazioni sul file",
- "Devam ettirilemez": "Non riprendibile"
+ "Devam ettirilemez": "Non riprendibile",
+ "Hız · Kalan süre": "Velocità · Tempo rimanente",
+ "{0} etkin": "{0} attivi",
+ "{0} kaldı": "{0} rimanenti",
+ " deneme": " tentativi",
+ "Diğer seçenekler": "Altre opzioni"
 }

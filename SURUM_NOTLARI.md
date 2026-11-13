@@ -7,6 +7,13 @@ Kurulu TurboDM'i güncellemek için: *Yardım → Güncellemeleri denetle*. · [
 <!-- Geliştirici notu: her yeni sürümde en üste "## x.y.z" bölümü eklenir (İngilizcesi RELEASE_NOTES.md'ye). "Güncellemeleri denetle"
      penceresinde o sürümün bölümü gösterilir (build.ps1 otomatik olarak latest.json'a koyar). -->
 
+## 1.8.1
+• Daha sade görünüm: pencerelerde kutu içinde kutu yok, ayarlar ve bilgiler düz liste hâlinde; düğmeler sade, yalnızca ana eylem mavi
+• İndirme listesi: dosya adının altında tek satır (boyut · durum), hız ve kalan süre tek sütunda; satır düğmeleri fare üzerine gelince ya da satır seçiliyken görünür. Boyut ve Kalan Süre sütunlarını isterseniz sütun başlığına sağ tıklayarak geri açabilirsiniz
+• Hız paneli ince bir şerit oldu: toplam hız, küçük hız grafiği, etkin indirme sayısı ve kalan süre. Kuyruğu başlatma/durdurma ve zamanlayıcı "Diğer" menüsünde
+• İndirme penceresi kısaldı: tek satırlık özet; bağlantı ayrıntıları "Ayrıntıları göster" ile açılır
+• Yeni İndirme penceresi kısaldı: kategori, açıklama, kuyruğa ekleme ve kimlik bilgisi "Diğer seçenekler" altında. Enter indirmeyi başlatır
+
 ## 1.8.0
 • Yenilenen Seçenekler penceresi: solda Genel, Bağlantı, Video, Torrent ve Kategoriler menüsü; ayarlar başlıklı gruplar hâlinde, onay kutuları yerine açma/kapama anahtarları, tema için Sistem / Açık / Koyu seçimi
 • Yenilenen indirme penceresi: büyük yüzde ve hız, indirilen, kalan süre, bağlantı sayısı ve devam ettirilebilirlik kartları, açılır bağlantı tablosu

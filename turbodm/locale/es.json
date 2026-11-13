@@ -495,5 +495,10 @@
  "İsteğe bağlı": "Opcional",
  "Kimlik bilgisi kullan": "Usar credenciales",
  "Dosya bilgisi": "Información del archivo",
- "Devam ettirilemez": "No se puede reanudar"
+ "Devam ettirilemez": "No se puede reanudar",
+ "Hız · Kalan süre": "Velocidad · Tiempo restante",
+ "{0} etkin": "{0} activas",
+ "{0} kaldı": "quedan {0}",
+ " deneme": " intentos",
+ "Diğer seçenekler": "Más opciones"
 }

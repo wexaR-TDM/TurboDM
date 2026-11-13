@@ -85,8 +85,8 @@ class GuiTests(unittest.TestCase):
         self.assertEqual(d.filename_lbl.text(), "arsiv.zip")
         self.assertEqual(d.size_lbl.text(), G.fmt_size(len(self.data)))
         self.assertEqual(d.cat.currentData(), "compressed")
-        self.assertEqual(d.form.labelForField(d.cat).text(), "Kategori")
-        self.assertEqual(d.form.labelForField(d.desc).text(), "Açıklama")
+        self.assertEqual(d.more_form.labelForField(d.cat).text(), "Kategori")
+        self.assertEqual(d.more_form.labelForField(d.desc).text(), "Açıklama")
         self.assertTrue(d.path_edit.text().endswith("Compressed"), "alan yalnızca klasör olmalı")
         d._go(True)
         it = [i for i in self.win.mgr.items.values() if i.url.endswith("arsiv.zip")][-1]
@@ -130,6 +130,78 @@ class GuiTests(unittest.TestCase):
         self.assertEqual(username.text(), "deneme")
         self.assertEqual(password.text(), "gizli parola")
         self.assertTrue(d.auth_card.isVisible())
+
+    def test_file_info_more_options_start_hidden(self):
+        # sade görünüm: dosya bilgisi tek satır; kategori, açıklama, kuyruk ve kimlik bilgisi "Diğer seçenekler"de
+        with mock.patch.object(G.FileInfoDialog, "_probe"):
+            d = G.FileInfoDialog(self.win, self.s.url("/arsiv.zip"))
+        d.show()
+        pump(0.1)
+        self.assertEqual(d.more_toggle.accessibleName(), "Diğer seçenekler")
+        self.assertFalse(d.more_toggle.isChecked())
+        for w in (d.cat, d.desc, d.queue_check, d.auth_toggle):
+            self.assertFalse(w.isVisible())
+        self.assertTrue(d.path_edit.isVisible())
+        self.assertEqual(d.filename_lbl.y(), d.size_lbl.y())  # ad ve boyut aynı satırda
+        d.more_toggle.click()
+        for w in (d.cat, d.desc, d.queue_check, d.auth_toggle):
+            self.assertTrue(w.isVisible())
+        self.assertTrue(d.auth_card.isHidden())
+        d.more_toggle.click()
+        d.auth_toggle.setChecked(True)  # kimlik bilgisi açılınca bölüm de açılır
+        self.assertTrue(d.more_toggle.isChecked())
+        self.assertTrue(d.auth_card.isVisible())
+        d.reject()
+
+    def test_file_info_enter_starts_download_and_height_follows_content(self):
+        from PySide6.QtTest import QTest
+        with mock.patch.object(G.FileInfoDialog, "_probe"):
+            d = G.FileInfoDialog(self.win, self.s.url("/arsiv.zip"))
+        d.show()
+        pump(0.1)
+        start = d.go_buttons[1]
+        self.assertTrue(start.isDefault())
+        self.assertIs(d.focusWidget(), start)  # İptal değil
+        short = d.height()
+        self.assertEqual(d.scroll.verticalScrollBar().maximum(), 0)  # içerik sığıyor, altta boşluk yok
+        self.assertLess(short, 500)
+        d.more_toggle.click()
+        pump(0.1)
+        self.assertGreater(d.height(), short)
+        self.assertEqual(d.scroll.verticalScrollBar().maximum(), 0)
+        d.more_toggle.click()
+        pump(0.1)
+        self.assertEqual(d.height(), short)
+        d.url_edit.setFocus()
+        with mock.patch.object(d, "_go") as go, mock.patch.object(d, "reject") as reject:
+            QTest.keyClick(d.url_edit, G.Qt.Key_Return)
+        go.assert_called_once_with(True)
+        reject.assert_not_called()
+        d.reject()
+        with mock.patch.object(G.FileInfoDialog, "_probe"):
+            empty = G.FileInfoDialog(self.win, "")
+        empty.show()
+        pump(0.1)
+        self.assertIs(empty.focusWidget(), empty.url_edit)  # adres boşsa önce adres yazılır
+        empty.reject()
+
+    def test_progress_dialog_height_follows_details(self):
+        it = self.win.mgr.add_http(self.s.url("/arsiv.zip"), os.path.join(TMP, "dl", "boy.zip"), start=False)
+        try:
+            dialog = G.ProgressDialog(self.win, it.id)
+            dialog.show()
+            pump(0.1)
+            short = dialog.height()
+            self.assertLess(short, 600)
+            dialog._toggle_details()
+            pump(0.1)
+            self.assertGreater(dialog.height(), short)
+            dialog._toggle_details()
+            pump(0.1)
+            self.assertEqual(dialog.height(), short)
+            dialog.close()
+        finally:
+            self.win.mgr.remove(it.id, delete_file=False)
 
     def test_file_info_credentials_are_forwarded_without_changing_headers(self):
         import base64
@@ -802,6 +874,10 @@ class GuiTests(unittest.TestCase):
                 pump(0.1)
                 rect = win.table.visualRect(win.table.model().index(row, G.SEL))
                 self.assertTrue(rect.isValid())
+                win.table._set_hover_row(None)  # işaretsiz kutu yalnızca fare satırdayken çizilir
+                img = win.table.viewport().grab(rect).toImage()
+                self.assertEqual(len({img.pixel(x, img.height() // 2) for x in range(img.width())}), 1, mode)
+                win.table._set_hover_row(row)
                 img = win.table.viewport().grab(rect).toImage()
                 ratio = img.width() / rect.width()
                 bg = QColor(img.pixel(1, 1))
@@ -810,6 +886,7 @@ class GuiTests(unittest.TestCase):
                 diff = max(abs(c.lightness() - bg.lightness()) for c in edge)
                 self.assertGreater(diff, 60, f"{mode}: kutu kenarı zeminden ayrılmıyor ({ratio})")
         finally:
+            win.table._set_hover_row(None)
             G.theme.apply(APP, "auto")
 
     def _list_items(self):
@@ -964,7 +1041,10 @@ class GuiTests(unittest.TestCase):
         stopped.segments = [[0, 499, 300], [500, 999, 600]]
         win.refresh(force=True)
         row = win._rows.index(stopped.id)
-        self.assertEqual(t.item(row, G.NAME).data(G.SUB_ROLE), "Video · kaldığı yerden sürer")
+        self.assertEqual(t.item(row, G.NAME).data(G.SUB_ROLE), ("1000 B", "Durduruldu", "muted"))  # boyut · durum
+        self.assertIn("Video · kaldığı yerden sürer", t.item(row, G.NAME).toolTip())  # ayrıntılar ipucunda
+        self.assertEqual(t.item(win._rows.index(items["error"].id), G.NAME).data(G.SUB_ROLE),
+                         ("1000 B", "Hata: HTTP 404", "bad"))
         self.assertFalse(t.item(row, G.NAME).icon().isNull())
         self.assertEqual(t.item(row, G.STATUS).data(G.SEG_ROLE), (1000, [(0, 499, 300), (500, 999, 600)]))
         self.assertEqual(t.item(row, G.STATUS).data(G.DETAIL_ROLE), "%40 · 400 B")  # duraklatılmış: yüzde · inen miktar
@@ -1004,6 +1084,24 @@ class GuiTests(unittest.TestCase):
         cell = t.visualRect(t.model().index(row, G.ACTIONS))
         return G.ActionDelegate.rects(cell, t.item(row, G.ACTIONS).data(G.ACTIONS_ROLE), t.fontMetrics(),
                                       t.layoutDirection())[name].center()
+
+    def test_row_buttons_shown_only_on_hover_or_selected_row(self):
+        from PySide6.QtCore import Qt as QtC
+        win, t = self.win, self.win.table
+        items = self._list_items()
+        row = win._rows.index(items["stopped"].id)
+        p = self._button_center(row, "play")
+        t.clearSelection()
+        t._set_hover_row(None)
+        self.assertIsNone(t._action_at(p))  # gizli düğme tıklanmaz
+        t._set_hover_row(row)
+        self.assertEqual(t._action_at(p), (row, "play"))
+        t._set_hover_row(None)
+        win._select_rows([row])  # klavyeyle seçilen satırda da görünür
+        self.assertEqual(t._action_at(p), (row, "play"))
+        acts = t.item(row, G.ACTIONS).data(QtC.AccessibleTextRole)
+        self.assertEqual(acts, "Devam Et, Klasörü aç, Diğer")  # ekran okuyucu düğme adlarını okur
+        t.clearSelection()
 
     def test_row_button_never_changes_multi_selection(self):
         from PySide6.QtCore import QEvent, QPoint, QPointF, Qt as QtC
@@ -1525,12 +1623,17 @@ class GuiTests(unittest.TestCase):
         self.assertEqual(dialog.pages.currentIndex(), 1)
         QTest.keyClick(dialog.lim_on, G.Qt.Key_Tab, G.Qt.ControlModifier | G.Qt.ShiftModifier)
         self.assertEqual(dialog.pages.currentIndex(), 0)
-        dialog.btn_details.click()
-        self.assertTrue(dialog.details.isHidden())
+        self.assertTrue(dialog.details.isHidden())  # ayrıntılar kapalı başlar
         self.assertEqual(dialog.btn_details.text(), "Ayrıntıları göster")
         dialog.btn_details.click()
         self.assertFalse(dialog.details.isHidden())
         self.assertEqual(dialog.btn_details.text(), "Ayrıntıları gizle")
+        dialog.btn_details.click()
+        self.assertTrue(dialog.details.isHidden())
+        # özet tek satır: inen miktar, kalan süre (yoksa gizli), bağlantı; devam ettirilebilir durumu
+        self.assertTrue(dialog.lbl["eta"].isHidden())
+        self.assertTrue(dialog.lbl["connections"].text().startswith("0/"), dialog.lbl["connections"].text())
+        self.assertEqual(dialog.lbl["resume"].text(), "Devam ettirilebilir")
         with mock.patch.object(G, "open_folder") as open_folder:
             dialog.btn_folder.click()
             open_folder.assert_called_once_with(it.path)
@@ -1712,6 +1815,8 @@ class GuiTests(unittest.TestCase):
         it = self._progress_item(size=200, done_bytes=125, segments=[[0, 99, 100], [100, 199, 125]])
         dialog = G.ProgressDialog(self.win, it.id)
         self.addCleanup(lambda: dialog.close() if dialog in QApplication.topLevelWidgets() else None)
+        self.assertTrue(dialog.details.isHidden())  # bağlantı tablosu "Ayrıntılar" ile kapalı başlar
+        dialog.btn_details.click()
         self.assertEqual(dialog.table.columnCount(), 4)
         self.assertEqual(dialog.table.rowCount(), 2)
         self.assertEqual(dialog.table.item(0, 3).text(), "Tamamlandı")
@@ -1857,16 +1962,13 @@ class GuiTests(unittest.TestCase):
         win.mgr._queue_running["main"] = False
         win.refresh(force=True)
         self.assertEqual((win.sp_big.text(), win.sp_unit.text()), ("5.0", "MB/s"))
-        self.assertEqual(win.sp_active.text(), "1")
+        self.assertEqual(win.sp_active.text(), "1 etkin")
         self.assertEqual(win.sp_eta.text(), G.fmt_time(60))
-        self.assertEqual(win.q_state.text(), "Kuyruk durdu")
-        self.assertEqual(win.q_toggle.text(), "Başlat")
-        self.assertEqual(win.q_wait.text(), "1 bekliyor")
+        self.assertEqual(win.speed_panel.toolTip(), "Kuyruk durdu · 1 bekliyor")  # kuyruk durumu şeridin ipucunda
         self.assertEqual(win.speed_lbl.text(), "İndirme: 5.0 MB/s")
         win.mgr._queue_running["main"] = True
         win.refresh()
-        self.assertEqual(win.q_state.text(), "Kuyruk çalışıyor")
-        self.assertEqual(win.q_toggle.text(), "Durdur")
+        self.assertEqual(win.speed_panel.toolTip(), "Kuyruk çalışıyor · 1 bekliyor")
         d.speed = 0
         win.refresh()
         self.assertEqual((win.sp_big.text(), win.sp_unit.text(), win.sp_eta.text()), ("0", "B/s", "–"))
@@ -1877,11 +1979,14 @@ class GuiTests(unittest.TestCase):
         # "Hız paneli" aç/kapat: ayar kaydedilir, panel gizlenir
         self.assertTrue(win.mgr.settings["speed_panel"])
         self.assertFalse(win.speed_panel.isHidden())
+        self.assertTrue(win.speed_lbl.isHidden())  # şerit açıkken toplam hız durum çubuğunda yinelenmez
         win.a_panel.setChecked(False)
         self.assertFalse(win.mgr.settings["speed_panel"])
         self.assertTrue(win.speed_panel.isHidden())
+        self.assertFalse(win.speed_lbl.isHidden())
         win.a_panel.setChecked(True)
         self.assertFalse(win.speed_panel.isHidden())
+        self.assertTrue(win.speed_lbl.isHidden())
 
     def test_narrow_window_keeps_heading_and_speed_labels(self):
         win = self.win
@@ -1892,14 +1997,13 @@ class GuiTests(unittest.TestCase):
         win.resize(900, 560)
         pump(0.1)
         self.assertEqual(win.size(), G.QSize(900, 560))
-        for label in (win.page_title, win.page_sub, win.sp_active, win.sp_eta):
+        for label in (win.page_title, win.sp_big, win.sp_active, win.sp_eta):
             self.assertTrue(label.isVisible())
             self.assertGreater(label.width(), 0)
             self.assertTrue(win.rect().contains(label.mapTo(win, label.rect().center())))
-        caps = {w.text(): w for w in win.speed_panel.findChildren(G.QLabel)}
-        for text in ("Etkin", "Kalan süre"):
-            self.assertTrue(caps[text].isVisible())
-            self.assertGreater(caps[text].width(), 0)
+        self.assertEqual((win.sp_active.toolTip(), win.sp_eta.toolTip()), ("Etkin", "Kalan süre"))
+        self.assertLess(win.speed_panel.height(), 40)  # tek satırlık ince şerit
+        self.assertEqual(win.sp_graph.width(), 120)
         win.search_box.hide()
         win.a_find.trigger()
         pump(0.1)
@@ -1946,9 +2050,12 @@ class GuiTests(unittest.TestCase):
         self.assertLessEqual(right, table.viewport().width())
         self.assertGreaterEqual(table.columnWidth(G.NAME), win.NAME_MIN - 1)
         self.assertEqual(win.mgr.settings["hidden_columns"], saved)
+        self.assertEqual(table.horizontalHeaderItem(G.SPEED).text(), "Hız · Kalan süre")  # kalan süre hızın yanında
+        win._set_column(G.ETA, True)
         win.resize(1500, 700)
         pump(0.1)
         self.assertFalse(table.isColumnHidden(G.ETA))
+        self.assertEqual(table.horizontalHeaderItem(G.SPEED).text(), "Aktarım Hızı")  # ayrı sütunlar
         self.assertFalse(table.isColumnHidden(G.SPEED))
         self.assertEqual(table.columnWidth(G.STATUS), win.STATUS_WIDTHS[1])
         # kullanıcının gizlediği sütun geniş pencerede de gizli kalır
@@ -2009,7 +2116,8 @@ class GuiTests(unittest.TestCase):
         win = self.win
         self.addCleanup(lambda: win.search_box.edit.setText(""))
         texts = [a.text() for a in win._more_btn.menu().actions() if not a.isSeparator()]
-        self.assertEqual(texts, ["Bitenleri Sil", "Gruplara ayır", "Hız paneli"])
+        self.assertEqual(texts, ["Bitenleri Sil", "Kuyruğu Başlat", "Kuyruğu Durdur", "Zamanlayıcı", "Gruplara ayır",
+                                 "Hız paneli"])
         menu_texts = [a.text() for m in win.menuBar().findChildren(G.QMenu) for a in m.actions()]
         for a in (win.a_qstart, win.a_qstop, win.a_sched):  # üst menü çubuğundaki yerleri kalır
             self.assertIn(a.text(), menu_texts)

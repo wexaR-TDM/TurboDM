@@ -495,5 +495,10 @@
  "İsteğe bağlı": "Facultatif",
  "Kimlik bilgisi kullan": "Utiliser des identifiants",
  "Dosya bilgisi": "Informations sur le fichier",
- "Devam ettirilemez": "Reprise impossible"
+ "Devam ettirilemez": "Reprise impossible",
+ "Hız · Kalan süre": "Vitesse · Temps restant",
+ "{0} etkin": "{0} actif(s)",
+ "{0} kaldı": "{0} restant",
+ " deneme": " essais",
+ "Diğer seçenekler": "Plus d'options"
 }

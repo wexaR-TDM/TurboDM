@@ -495,5 +495,10 @@
  "İsteğe bağlı": "Optional",
  "Kimlik bilgisi kullan": "Zugangsdaten verwenden",
  "Dosya bilgisi": "Dateiinformationen",
- "Devam ettirilemez": "Nicht fortsetzbar"
+ "Devam ettirilemez": "Nicht fortsetzbar",
+ "Hız · Kalan süre": "Geschwindigkeit · Restzeit",
+ "{0} etkin": "{0} aktiv",
+ "{0} kaldı": "noch {0}",
+ " deneme": " Versuche",
+ "Diğer seçenekler": "Weitere Optionen"
 }

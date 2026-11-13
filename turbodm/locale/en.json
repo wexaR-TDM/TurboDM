@@ -495,5 +495,10 @@
  "İsteğe bağlı": "Optional",
  "Kimlik bilgisi kullan": "Use credentials",
  "Dosya bilgisi": "File information",
- "Devam ettirilemez": "Cannot be resumed"
+ "Devam ettirilemez": "Cannot be resumed",
+ "Hız · Kalan süre": "Speed · Time left",
+ "{0} etkin": "{0} active",
+ "{0} kaldı": "{0} left",
+ " deneme": " tries",
+ "Diğer seçenekler": "More options"
 }

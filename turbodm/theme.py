@@ -68,41 +68,35 @@ QToolButton#newDownloadMenu::menu-indicator, QToolButton#headMenu::menu-indicato
 QToolButton#sideButton { background: transparent; border: none; border-radius: 8px; padding: 8px 6px; color: $text; }
 QToolButton#sideButton:hover { background: $hover; color: $text; }
 QFrame#sideSep { background: $border_soft; border: none; }
-QToolButton#headButton, QToolButton#headMenu { background: $surface; border: 1px solid $border; border-radius: 8px;
-    padding: 7px 12px; color: $text; }
+QToolButton#headButton, QToolButton#headMenu { background: transparent; border: 1px solid transparent; border-radius: 8px;
+    padding: 7px 9px; color: $text; }
 QToolButton#headButton:hover, QToolButton#headMenu:hover { background: $hover; }
+QToolButton#headButton:focus, QToolButton#headMenu:focus { border-color: $accent; }
 QToolButton#headButton:pressed, QToolButton#headMenu:pressed { background: $accent_soft; }
 QToolButton#headButton:disabled { color: $muted; }
-QLabel#pageTitle { font-size: 21px; font-weight: 600; }
+QLabel#pageTitle { font-size: 22px; font-weight: 600; }
 QLabel#pageSub { color: $muted; }
-QFrame#searchBox { background: $surface; border: 1px solid $border; border-radius: 8px; }
-QFrame#searchBox[focus="true"] { border: 1px solid $accent; }
+QFrame#searchBox { background: transparent; border: none; border-bottom: 1px solid $border; border-radius: 0; }
+QFrame#searchBox[focus="true"] { border-bottom: 1px solid $accent; }
 QLineEdit#searchEdit, QLineEdit#searchEdit:focus { background: transparent; border: none; padding: 0; }
-QLabel#kbd { color: $muted; border: 1px solid $border; border-radius: 5px; padding: 0 5px; font-size: 11px; }
-QFrame#speedPanel { background: $surface; border: 1px solid $border; border-radius: 12px; }
-QFrame#queueCard { background: $surface2; border: none; border-radius: 10px; }
-QLabel#panelCap { color: $muted; font-size: 12px; }
-QLabel#panelBig { font-size: 26px; font-weight: 600; }
-QLabel#panelUnit { color: $muted; font-size: 13px; }
-QLabel#panelVal { font-size: 16px; font-weight: 600; }
-QLabel#queueState { font-weight: 600; }
-QLabel#queueWait { color: $muted; }
-QPushButton#miniButton { padding: 4px 10px; min-height: 16px; min-width: 0; }
-QFrame#listFrame { background: $surface; border: 1px solid $border; border-bottom: none;
-    border-top-left-radius: 12px; border-top-right-radius: 12px; }
+QFrame#speedPanel { background: transparent; border: none; }
+QLabel#panelBig, QLabel#panelUnit { font-size: 15px; font-weight: 600; }
+QLabel#panelVal { font-size: 14px; }
+QFrame#panelSep { background: $border; border: none; }
+QFrame#listFrame { background: transparent; border: none; }
 
-QFrame#settingsSidebar { background: $side; border: none; }
+QFrame#settingsSidebar { background: $bg; border: none; }
 QListWidget#optionsNav { background: transparent; border: none; padding: 0; outline: 0; }
 QListWidget#optionsNav::item { padding: 11px 10px; border-radius: 8px; border: none; }
 QListWidget#optionsNav::item:hover { background: $hover; }
-QListWidget#optionsNav::item:selected { background: $accent_soft; color: $text; }
+QListWidget#optionsNav::item:selected { background: $hover; color: $text; }
 QListWidget#optionsNav::item:focus { border: none; }
 QScrollArea#settingsScroll { background: $bg; border: none; }
 QWidget#settingsPage { background: $bg; }
 QLabel#settingsTitle { font-size: 23px; font-weight: 700; padding-bottom: 2px; }
 QLabel#settingsSection { color: $muted; font-size: 12px; font-weight: 700; }
 QLabel#settingsNote { color: $muted; }
-QFrame#settingsCard { background: $surface; border: 1px solid $border; border-radius: 10px; }
+QFrame#settingsCard { background: transparent; border: none; }
 QFrame#settingsDivider { background: $border; border: none; }
 QFrame#settingsFooter { background: $bg; border: none; border-top: 1px solid $border; }
 QDialog#optionsDialog QSpinBox, QDialog#optionsDialog QComboBox {
@@ -111,23 +105,22 @@ QDialog#optionsDialog QSpinBox, QDialog#optionsDialog QComboBox {
 QDialog#optionsDialog QSpinBox:focus, QDialog#optionsDialog QComboBox:focus { border-color: $accent; }
 QDialog#optionsDialog QSpinBox:disabled, QDialog#optionsDialog QComboBox:disabled { color: $muted; background: $surface2; }
 QDialog#optionsDialog QPushButton:focus { border-color: $accent; }
-QFrame#segmentedControl { background: $surface2; border: 1px solid $border; border-radius: 8px; }
-QPushButton#segmentButton { background: transparent; border: 1px solid transparent; border-radius: 6px;
-    padding: 4px 10px; min-width: 0; color: $text; }
-QPushButton#segmentButton:hover { background: $hover; }
-QPushButton#segmentButton:checked { background: $accent; color: $on_accent; border-color: $accent; }
+QFrame#segmentedControl { background: transparent; border: none; border-radius: 0; }
+QFrame#segmentedControl[tabs="true"] { border-bottom: 1px solid $border; }
+QPushButton#segmentButton { background: transparent; border: none; border-bottom: 2px solid transparent; border-radius: 0;
+    padding: 6px 12px; min-width: 0; color: $muted; }
+QPushButton#segmentButton:hover { background: transparent; color: $text; }
+QPushButton#segmentButton:checked { background: transparent; color: $text; border-bottom: 2px solid $accent; }
 QDialog QPushButton#segmentButton:focus { border-color: transparent; outline: 0; }
 QDialog QPushButton#segmentButton:checked:focus { border-color: $accent; }
 QDialog QPushButton#segmentButton[keyboardFocus="true"]:focus { border: 1px dashed $accent_text; }
 
-QFrame#progressCard { background: $surface; border: 1px solid $border; border-radius: 10px; }
+QFrame#progressCard { background: transparent; border: none; }
 QScrollArea#transferScroll { background: transparent; border: none; }
 QScrollArea#transferScroll > QWidget > QWidget { background: $bg; }
 QLabel#transferFilename { font-size: 19px; font-weight: 700; }
-QLabel#categoryChip { background: $surface2; color: $accent_text; border-radius: 10px; padding: 3px 10px; }
 QLabel#transferPercent { font-size: 38px; font-weight: 700; }
 QLabel#transferSpeed { font-size: 23px; font-weight: 700; }
-QLabel#transferValue { font-size: 17px; font-weight: 600; }
 QLabel#transferSettingTitle { font-size: 16px; font-weight: 600; }
 QDialog#progressDialog QLabel[tone="ok"] { color: $ok; }
 QDialog#progressDialog QLabel[tone="bad"] { color: $bad; }
@@ -147,17 +140,19 @@ QDialog#progressDialog QDoubleSpinBox:disabled { color: $muted; background: $sur
 QTableWidget#connectionTable { background: $surface; border: 1px solid $border; border-radius: 9px; }
 QTableWidget#connectionTable::item { border: none; border-bottom: 1px solid $border_soft; padding: 3px 10px; }
 QTableWidget#connectionTable QHeaderView::section { background: $surface2; padding: 7px 10px; }
+QProgressBar#transferBar { min-height: 8px; max-height: 8px; border-radius: 4px; }
+QProgressBar#transferBar::chunk { border-radius: 4px; }
 QProgressBar#connectionProgress { min-height: 12px; border-radius: 5px; font-weight: 400; text-align: left; }
 QProgressBar#connectionProgress::chunk { border-radius: 5px; }
 QProgressBar#connectionProgress[tone="ok"]::chunk { background: $ok; }
 QMessageBox#transferMessage { background: $bg; }
 QMessageBox#transferMessage QLabel { padding: 8px; }
 
-QFrame#dialogCard { background: $surface; border: 1px solid $border; border-radius: 10px; }
+QFrame#dialogCard { background: transparent; border: none; }
 QScrollArea#dialogScroll { background: transparent; border: none; }
 QWidget#dialogPage { background: $bg; }
-QLabel#dialogFilename { font-size: 17px; font-weight: 700; }
-QLabel#dialogFileType { background: $surface2; border-radius: 8px; padding: 6px; }
+QLabel#dialogFilename { font-weight: 600; }
+QLabel#dialogFileType { background: transparent; padding: 0; }
 QLabel#dialogNote { color: $muted; }
 QLabel#dialogResume { font-weight: 600; }
 QLabel#dialogResume[tone="ok"], QLabel#dialogResult[tone="ok"] { color: $ok; }
@@ -172,8 +167,8 @@ QDialog#fileInfoDialog QComboBox::drop-down { subcontrol-origin: padding; subcon
     width: 26px; border: none; background: transparent; }
 QDialog#fileInfoDialog QComboBox::down-arrow { image: url("$spin_down"); width: 10px; height: 10px; }
 QPushButton#dialogBrowse { padding: 8px 12px; min-width: 22px; min-height: 24px; }
-QPushButton#dialogDisclosure { background: transparent; border: none; border-top: 1px solid $border;
-    border-radius: 0; padding: 14px 4px; text-align: left; }
+QPushButton#dialogDisclosure { background: transparent; border: 1px solid transparent;
+    border-radius: 6px; padding: 8px 4px; text-align: left; }
 QPushButton#dialogDisclosure:checked { background: transparent; }
 QPushButton#dialogDisclosure[rtl="true"] { text-align: right; }
 QPushButton#dialogDisclosure:hover { background: $hover; }
@@ -188,10 +183,12 @@ QTreeWidget#nav::item { padding: 7px 6px; border-radius: 8px; margin: 1px 0; bor
 QTreeWidget#nav::item:hover { background: $hover; }
 QTreeWidget#nav::item:selected { background: $accent_soft; color: $text; }
 
-QTableWidget#list { background: $surface; alternate-background-color: $alt; border: none; gridline-color: transparent;
+QTableWidget#list { background: $bg; alternate-background-color: $alt; border: none; gridline-color: transparent;
     selection-background-color: $accent_soft; selection-color: $text; outline: 0; }
-QTableWidget#list::item { border: none; border-bottom: 1px solid $border_soft; padding: 0 6px; }
+QTableWidget#list::item { border: none; padding: 0 6px; }
+QTableWidget#list::item:hover { background: $hover; }
 QTableWidget#list::item:selected { background: $accent_soft; color: $text; }
+QTableWidget#list QHeaderView, QTableWidget#list QHeaderView::section { background: $bg; font-weight: 400; }
 QHeaderView { background: $surface; }
 QHeaderView::section { background: $surface; color: $muted; border: none; border-bottom: 1px solid $border;
     padding: 7px 12px; font-weight: 600; }
@@ -201,12 +198,12 @@ QStatusBar { background: $side; color: $muted; border-top: 1px solid $border; }
 QStatusBar QLabel { color: $muted; padding: 2px 8px; }
 QStatusBar::item { border: none; }
 
-QPushButton { background: $surface2; color: $text; border: 1px solid $border; border-radius: 8px; padding: 6px 16px; min-height: 18px; }
-QPushButton:hover { border-color: $accent; background: $hover; }
+QPushButton { background: transparent; color: $text; border: 1px solid transparent; border-radius: 8px; padding: 6px 16px; min-height: 18px; }
+QPushButton:hover { background: $hover; }
 QPushButton:pressed { background: $accent_soft; }
 QPushButton:default { background: $accent; color: #ffffff; border: 1px solid $accent; font-weight: 600; }
 QPushButton:default:hover { background: $accent_hover; border-color: $accent_hover; }
-QPushButton:disabled { color: $muted; background: $surface; border-color: $border_soft; }
+QPushButton:disabled { color: $muted; background: transparent; border-color: transparent; }
 QPushButton:checked { background: $accent_soft; border-color: $accent; }
 QPushButton#browse { padding: 4px 0; min-width: 0; font-weight: 700; }
 

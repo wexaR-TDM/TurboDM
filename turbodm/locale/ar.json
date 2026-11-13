@@ -495,5 +495,10 @@
  "İsteğe bağlı": "اختياري",
  "Kimlik bilgisi kullan": "استخدام بيانات تسجيل الدخول",
  "Dosya bilgisi": "معلومات الملف",
- "Devam ettirilemez": "لا يمكن استئنافه"
+ "Devam ettirilemez": "لا يمكن استئنافه",
+ "Hız · Kalan süre": "السرعة · الوقت المتبقي",
+ "{0} etkin": "{0} نشطة",
+ "{0} kaldı": "متبقٍ {0}",
+ " deneme": " محاولات",
+ "Diğer seçenekler": "خيارات أخرى"
 }

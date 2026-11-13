@@ -7,6 +7,13 @@ To update an installed TurboDM: *Help → Check for updates*. · [Türkçe sür�
 <!-- Developer note: add a "## x.y.z" section at the top for every new version, in the same order as
      SURUM_NOTLARI.md. The update window shows the section of that version (build.ps1 puts it into latest.json). -->
 
+## 1.8.1
+• A cleaner look: no boxes inside boxes, settings and details as plain lists; simple buttons, with only the main action in blue
+• Download list: one line under the file name (size · status), speed and time left in one column; row buttons appear when you hover over a row or select it. You can bring back the Size and Time Left columns by right-clicking a column header
+• The speed panel is now a thin strip: total speed, a small speed graph, the number of active downloads and time left. Queue start/stop and the scheduler are in the "More" menu
+• Shorter download window: a one-line summary; connection details open with "Show details"
+• Shorter New Download window: category, description, add to queue and credentials are under "More options". Enter starts the download
+
 ## 1.8.0
 • Redesigned Options window: a menu on the left with General, Connection, Video, Torrent and Categories; settings in titled groups, switches instead of checkboxes, and a System / Light / Dark theme choice
 • Redesigned download window: large percentage and speed, cards for downloaded, time left, connection count and resume support, and a collapsible connection table

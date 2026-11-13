@@ -11,7 +11,7 @@ from collections import deque
 from datetime import datetime
 
 from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, QRect, QRectF, QSize, QTime, QTimer, QUrl, Qt, Signal
-from PySide6.QtGui import QAction, QActionGroup, QColor, QDesktopServices, QFont, QFontMetrics, QIcon, QKeySequence, QLinearGradient, QPainter, QPainterPath, QPalette, QPen, QPixmap, QShortcut
+from PySide6.QtGui import QAction, QActionGroup, QColor, QDesktopServices, QFont, QFontMetrics, QIcon, QKeySequence, QPainter, QPainterPath, QPalette, QPen, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QAbstractButton, QAbstractItemView, QApplication, QBoxLayout, QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QFileDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLayout,
@@ -390,7 +390,7 @@ def _dialog_card(title=None):
     card = QFrame()
     card.setObjectName("dialogCard")
     layout = QVBoxLayout(card)
-    layout.setContentsMargins(18, 16, 18, 16)
+    layout.setContentsMargins(0, 4, 0, 4)  # kartsız grup: yalnızca boşluk ve küçük soluk başlık
     layout.setSpacing(12)
     if title:
         label = QLabel(_section_upper(title.rstrip(":")))
@@ -410,6 +410,26 @@ def _dialog_form(form):
         item = form.itemAt(row, QFormLayout.LabelRole)
         if item and isinstance(item.widget(), QLabel):
             item.widget().setWordWrap(True)
+
+
+def _fit_dialog_height(dialog, outer, scroll, grow_only=False):
+    """Pencere yüksekliğini kaydırma alanındaki içeriğe göre ayarlar (boş alan kalmaz, ekrana sığar). outer: pencere
+    düzenindeki kutu (kaydırma alanı ya da onu taşıyan sayfa yığını). grow_only: yalnızca büyütür (sıçrama olmasın)."""
+    dialog.layout().invalidate()
+    content = scroll.widget()
+    content.layout().activate()
+    margins = dialog.layout().contentsMargins()
+    width = max(1, dialog.width() - margins.left() - margins.right() - 2 * scroll.frameWidth())
+    inner = content.heightForWidth(width) if content.hasHeightForWidth() else -1
+    if inner < 0:
+        inner = content.sizeHint().height()
+    want = dialog.sizeHint().height() - outer.sizeHint().height() + inner + 2 * scroll.frameWidth()
+    area = (dialog.screen() or QApplication.primaryScreen()).availableGeometry()
+    want = max(min(want, area.height() - 40), dialog.minimumSizeHint().height())
+    if grow_only:
+        want = max(want, dialog.height())
+    if want != dialog.height():
+        dialog.resize(dialog.width(), want)
 
 
 class _DialogFooter(QFrame):
@@ -437,8 +457,20 @@ class _DialogFooter(QFrame):
         self.row.setDirection(QBoxLayout.TopToBottom if self.width() < needed else QBoxLayout.LeftToRight)
 
 
+class _InlineLabel(QLabel):
+    """Satır içi bilgi: dar pencerede satırı itmez (kırpılır), tam metin ipucunda."""
+
+    def setText(self, text):
+        super().setText(text)
+        self.setToolTip(text)
+
+    def minimumSizeHint(self):
+        return QSize(0, super().minimumSizeHint().height())
+
+
 class FileInfoDialog(QDialog):
-    """IDM'deki 'İndirme Dosyası Bilgisi' penceresi."""
+    """IDM'deki 'İndirme Dosyası Bilgisi' penceresi. Dosya bilgisi tek satırdır; Kategori, Açıklama, Kuyruğa ekle ve
+    kimlik bilgisi "Diğer seçenekler" bölümünde kapalı başlar."""
 
     def __init__(self, win, url, headers=None, suggested=None, cookies=None, video_info=None, preselect=None):
         """video_info/preselect: tarayıcıdaki kalite menüsünden gelindiyse hazır bilgi ve seçilen biçim
@@ -477,45 +509,33 @@ class FileInfoDialog(QDialog):
         prow.addWidget(self.browse)
         self.desc = QLineEdit()
         self.desc.setPlaceholderText(_t("İsteğe bağlı"))
-        self.size_lbl = _wrap_settings_label(QLabel(_t("Sorgulanıyor…")))
+        self.size_lbl = QLabel(_t("Sorgulanıyor…"))
         self.size_lbl.setObjectName("dialogNote")
         self.size_lbl.setWordWrap(True)
         self.size_lbl.setTextFormat(Qt.PlainText)
-        self.filename_lbl = _wrap_settings_label(QLabel())
+        self.filename_lbl = _InlineLabel()
         self.filename_lbl.setObjectName("dialogFilename")
-        self.filename_lbl.setWordWrap(True)
         self.filename_lbl.setTextFormat(Qt.PlainText)
         self.filename_lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.file_type = QLabel()
         self.file_type.setObjectName("dialogFileType")
         self.file_type.setAlignment(Qt.AlignCenter)
-        self.file_type.setMinimumSize(56, 64)
         self.resume_icon = QLabel()
         self.resume_lbl = QLabel()
         self.resume_lbl.setObjectName("dialogResume")
-        self.resume_lbl.setWordWrap(True)
         self.resume_icon.hide()
         self.resume_lbl.hide()
-        self.size_separator = QFrame()
-        self.size_separator.setObjectName("settingsDivider")
-        self.size_separator.setFixedWidth(1)
+        self.size_separator = QLabel("·")
+        self.size_separator.setObjectName("dialogNote")
         self.size_separator.hide()
-        details = QVBoxLayout()
-        details.setSpacing(8)
-        details.addWidget(self.filename_lbl)
-        metadata = QHBoxLayout()
-        metadata.setSpacing(10)
-        metadata.addWidget(self.size_lbl, 1)
-        metadata.addWidget(self.size_separator)
-        metadata.addWidget(self.resume_icon)
-        metadata.addWidget(self.resume_lbl, 2)
-        details.addLayout(metadata)
-        file_card, file_layout = _dialog_card()
-        file_row = QHBoxLayout()
-        file_row.setSpacing(18)
-        file_row.addWidget(self.file_type)
-        file_row.addLayout(details, 1)
-        file_layout.addLayout(file_row)
+        name_dot = QLabel("·")
+        name_dot.setObjectName("dialogNote")
+        file_row = QHBoxLayout()  # tek satır: simge, ad · boyut · devam ettirilebilir
+        file_row.setSpacing(8)
+        for w in (self.file_type, self.filename_lbl, name_dot, self.size_lbl, self.size_separator, self.resume_icon,
+                  self.resume_lbl):
+            file_row.addWidget(w)
+        file_row.addStretch(1)
         self.quality = QComboBox()   # yalnızca HLS videolarda görünür
         self.hls_info = None
         self.fmt = QComboBox()       # indirme bitince dönüştürme (video/ses)
@@ -526,14 +546,23 @@ class FileInfoDialog(QDialog):
         self.form = form
         form.addRow(_t("Kalite:"), self.quality)
         form.addRow(_t("Biçim:"), self.fmt)
-        form.addRow(_t("Kategori"), self.cat)
         form.addRow(_t("Kaydedilecek yer"), prow)
-        form.addRow(_t("Açıklama"), self.desc)
         _dialog_form(form)
         form.setRowWrapPolicy(QFormLayout.WrapAllRows)
         form.setRowVisible(self.quality, False)
         form.setRowVisible(self.fmt, False)
+        self.more_form = QFormLayout()
+        self.more_form.addRow(_t("Kategori"), self.cat)
+        self.more_form.addRow(_t("Açıklama"), self.desc)
+        _dialog_form(self.more_form)
+        self.more_form.setRowWrapPolicy(QFormLayout.WrapAllRows)
 
+        self.more_toggle = QPushButton(_t("Diğer seçenekler"))
+        self.more_toggle.setObjectName("dialogDisclosure")
+        self.more_toggle.setProperty("rtl", i18n.is_rtl())
+        self.more_toggle.setAccessibleName(self.more_toggle.text())
+        self.more_toggle.setCheckable(True)
+        self.more_toggle.setAutoDefault(False)
         self.queue_check = QCheckBox(_t("Kuyruğa ekle"))
         self.auth_toggle = QPushButton(_t("Kimlik bilgisi kullan"))
         self.auth_toggle.setObjectName("dialogDisclosure")
@@ -571,16 +600,27 @@ class FileInfoDialog(QDialog):
         address_label.setBuddy(self.url_edit)
         body.addWidget(address_label)
         body.addWidget(self.url_edit)
-        body.addWidget(file_card)
+        body.addLayout(file_row)
         body.addLayout(form)
-        body.addWidget(self.queue_check)
-        body.addWidget(self.auth_toggle)
-        body.addWidget(self.auth_card)
+        body.addWidget(self.more_toggle, 0, Qt.AlignLeading)
+        self.more_box = QWidget()
+        more = QVBoxLayout(self.more_box)
+        more.setContentsMargins(0, 0, 0, 0)
+        more.setSpacing(14)
+        more.addLayout(self.more_form)
+        more.addWidget(self.queue_check)
+        more.addWidget(self.auth_toggle)
+        more.addWidget(self.auth_card)
+        self.more_box.hide()
+        self.more_toggle.toggled.connect(self._toggle_more)
+        body.addWidget(self.more_box)
         body.addStretch()
         scroll = QScrollArea()
         scroll.setObjectName("dialogScroll")
         scroll.setWidgetResizable(True)
+        scroll.setFocusPolicy(Qt.NoFocus)  # ilk odak kaydırma alanına değil, alana ya da düğmeye gelsin
         scroll.setWidget(content)
+        self.scroll = scroll
         lay = QVBoxLayout(self)
         lay.setContentsMargins(24, 20, 24, 20)
         lay.setSpacing(16)
@@ -619,10 +659,25 @@ class FileInfoDialog(QDialog):
             self._start_video()  # DASH (.mpd): yt-dlp akışı indirip birleştirir
         else:
             threading.Thread(target=self._probe, daemon=True).start()
+        self._fit()
+        # Enter indirmeyi başlatır (İptal'i değil); adres boşsa ya da inceleme sürerken odak adres kutusunda.
+        b_start.setDefault(True)
+        (b_start if url.strip() and b_start.isEnabled() else self.url_edit).setFocus()
+
+    def _fit(self, grow_only=False):
+        _fit_dialog_height(self, self.scroll, self.scroll, grow_only)
 
     def _toggle_auth(self, expanded):
+        if expanded:
+            self.more_toggle.setChecked(True)  # kimlik bilgisi "Diğer seçenekler" içinde
         self.auth_card.setVisible(expanded)
         self._refresh_icons()
+        self._fit(grow_only=expanded)
+
+    def _toggle_more(self, expanded):
+        self.more_box.setVisible(expanded)
+        self._refresh_icons()
+        self._fit(grow_only=expanded)  # açılınca büyür, kapanınca içeriğe göre küçülür
 
     def _refresh_icons(self):
         self.url_action.setIcon(theme.icon("link"))
@@ -630,15 +685,15 @@ class FileInfoDialog(QDialog):
         self.browse.setIconSize(QSize(22, 22))
         self.go_buttons[0].setIcon(theme.icon("clock"))
         self.go_buttons[1].setIcon(theme.icon("download", "on_accent"))
-        self.auth_toggle.setIcon(theme.icon("collapse" if self.auth_toggle.isChecked() else
-                                           "disclose_rtl" if i18n.is_rtl() else "disclose"))
+        for b in (self.auth_toggle, self.more_toggle):
+            b.setIcon(theme.icon("collapse" if b.isChecked() else "disclose_rtl" if i18n.is_rtl() else "disclose"))
         cat = category_for(getattr(self, "name", ""))
         icon_name = {"documents": "document", "programs": "program"}.get(cat, cat)
         self.file_type.setPixmap(theme.icon(icon_name if icon_name in
-                                 ("compressed", "document", "program", "video", "music") else "general").pixmap(38, 38))
+                                 ("compressed", "document", "program", "video", "music") else "general").pixmap(20, 20))
         resumable = self.info.get("resumable", True)
         self.resume_icon.setPixmap(theme.icon("st_done" if resumable else "st_error",
-                                              "ok" if resumable else "warn").pixmap(20, 20))
+                                              "ok" if resumable else "warn").pixmap(16, 16))
 
     def _request_headers(self):
         headers = dict(self.headers)
@@ -696,6 +751,7 @@ class FileInfoDialog(QDialog):
         self.quality.blockSignals(False)
         self.form.setRowVisible(self.quality, True)
         self._quality_changed()
+        self._fit(grow_only=True)
 
     def _quality_changed(self):
         if not self.video_info:
@@ -739,6 +795,7 @@ class FileInfoDialog(QDialog):
         if not self.mgr.ffmpeg():
             text += _t("  ·  ffmpeg bulunamadı: .ts olarak kaydedilir (Seçenekler → Video)")
         self.size_lbl.setText(text)
+        self._fit(grow_only=True)
         stem = os.path.splitext(getattr(self, "name", "") or "")[0]
         if not stem or stem.lower() in ("index", "master", "playlist", "chunklist", "download"):
             stem = "video"
@@ -840,6 +897,7 @@ class FileInfoDialog(QDialog):
         for widget in (self.resume_lbl, self.resume_icon, self.size_separator):
             widget.show()
         self._set_name(info["filename"])
+        self._fit(grow_only=True)  # video/ses dosyasında "Biçim" satırı eklenir
 
     def _go(self, start):
         folder = self.path_edit.text().strip()
@@ -1061,27 +1119,6 @@ class SmoothProgress:
         return int(self.shown), self.speed
 
 
-def _draw_file_tile(painter, rect, icon, active=False):
-    """Liste ve indirme başlığı için ortak tür kutucuğu."""
-    painter.setPen(Qt.NoPen)
-    painter.setBrush(QColor(theme.T["accent_soft" if active else "surface2"]))
-    painter.drawRoundedRect(QRectF(rect), 9, 9)
-    inset = max(9, rect.width() // 4)
-    icon.paint(painter, rect.adjusted(inset, inset, -inset, -inset))
-
-
-class _FileTypeTile(QWidget):
-    def __init__(self, category, parent=None):
-        super().__init__(parent)
-        self.category = category
-        self.setFixedSize(68, 68)
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        _draw_file_tile(painter, self.rect(), theme.icon(CAT_ICONS.get(self.category, "general")))
-
-
 class _SourceLabel(QLabel):
     """Adresi saklar; görünür bölümünü ortadan kısaltır."""
     def paintEvent(self, event):
@@ -1150,43 +1187,33 @@ class ProgressDialog(QDialog):
         self.is_torrent = it.kind == "torrent"
         it.on_complete = normalize_completion(getattr(it, "on_complete", None))
         self.lbl = {}
-        self._icons = []
 
-        # Dosya başlığı ve kaynak.
-        self.file_tile = _FileTypeTile(it.category)
+        # Dosya başlığı ve kaynak (kategori adın ipucunda).
         self.filename_label = _wrap_settings_label(QLabel(it.filename))
         self.filename_label.setObjectName("transferFilename")
         self.filename_label.setTextFormat(Qt.PlainText)
         self.filename_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.filename_label.setToolTip(CATEGORIES.get(it.category, CATEGORIES["general"])[0])
         self.lbl["url"] = _SourceLabel(it.url)
         self.lbl["url"].setObjectName("settingsNote")
         self.lbl["url"].setTextFormat(Qt.PlainText)
         self.lbl["url"].setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.lbl["url"].setToolTip(it.url)
         self.lbl["url"].setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        self.category_label = QLabel(CATEGORIES.get(it.category, CATEGORIES["general"])[0])
-        self.category_label.setObjectName("categoryChip")
-        chip_row = QHBoxLayout()
-        chip_row.addWidget(self.category_label)
-        chip_row.addStretch()
-        title = QVBoxLayout()
-        title.setSpacing(4)
-        title.addWidget(self.filename_label)
-        title.addWidget(self.lbl["url"])
-        title.addLayout(chip_row)
-        header = QHBoxLayout()
-        header.setSpacing(18)
-        header.addWidget(self.file_tile, 0, Qt.AlignTop)
-        header.addLayout(title, 1)
+        header = QVBoxLayout()
+        header.setSpacing(4)
+        header.addWidget(self.filename_label)
+        header.addWidget(self.lbl["url"])
 
         self.tabs = SegmentedControl()
+        self.tabs.setProperty("tabs", True)  # alt çizgili düz metin sekmeler, sola yaslı
         self.pages = QStackedWidget()
         status_page = self._page(_t("İndirme durumu"))
         l1 = status_page.layout()
         hero = QFrame()
         hero.setObjectName("progressCard")
         hero_layout = QVBoxLayout(hero)
-        hero_layout.setContentsMargins(18, 12, 18, 16)
+        hero_layout.setContentsMargins(0, 4, 0, 0)
         hero_row = QHBoxLayout()
         self.percent_label = QLabel()
         self.percent_label.setObjectName("transferPercent")
@@ -1198,56 +1225,48 @@ class ProgressDialog(QDialog):
         self.lbl["status"].setTextInteractionFlags(Qt.TextSelectableByMouse)
         percent_layout.addWidget(self.lbl["status"])
         hero_row.addLayout(percent_layout, 1)
-        speed_layout = QVBoxLayout()
-        speed_layout.setSpacing(6)
-        self.bar = SegmentBar()
-        self.bar.setMinimumHeight(8)
-        self.bar.setFixedHeight(8)
-        self.bar.setMaximumWidth(160)
-        self.bar.setAccessibleName(_t("Bağlantı"))
-        speed_layout.addWidget(self.bar, 0, Qt.AlignTrailing)
         self.lbl["speed"] = QLabel()
         self.lbl["speed"].setObjectName("transferSpeed")
-        speed_layout.addWidget(self.lbl["speed"], 0, Qt.AlignTrailing)
-        hero_row.addLayout(speed_layout)
+        hero_row.addWidget(self.lbl["speed"], 0, Qt.AlignTrailing | Qt.AlignTop)
         hero_layout.addLayout(hero_row)
         self.pbar = QProgressBar()
+        self.pbar.setObjectName("transferBar")
         self.pbar.setRange(0, 1000)
         self.pbar.setTextVisible(False)
         self.pbar.setAccessibleName(_t("İlerleme"))
         hero_layout.addWidget(self.pbar)
         l1.addWidget(hero)
 
-        self.info_grid = QGridLayout()
-        self.info_grid.setSpacing(10)
-        self._info_cards = []
-        fourth = ("peers", _t("Eşler / Seed"), "magnet") if self.is_torrent else (
-            "resume", _t("Devam ettirilebilir"), "st_done")
-        for key, text, icon_name in (("done", _t("İndirilen"), "st_down"),
-                                     ("eta", _t("Kalan süre"), "clock"),
-                                     ("connections", _t("Bağlantı"), "link"), fourth):
-            card = QFrame()
-            card.setObjectName("progressCard")
-            card_layout = QHBoxLayout(card)
-            card_layout.setContentsMargins(14, 10, 14, 10)
-            symbol = QLabel()
-            self._icons.append((symbol, icon_name))
-            card_layout.addWidget(symbol)
-            text_layout = QVBoxLayout()
-            text_layout.setSpacing(3)
-            caption = _wrap_settings_label(QLabel(text))
-            caption.setObjectName("settingsNote")
-            self.lbl[key] = _wrap_settings_label(QLabel())
-            self.lbl[key].setObjectName("transferValue")
+        # Özet tek soluk satır: "1.79 / 5.76 GB · 1dk 6sn kaldı · 7/8 bağlantı" (başlıklar ipucunda).
+        summary = QHBoxLayout()
+        summary.setSpacing(6)
+        last = ("peers", _t("Eşler / Seed")) if self.is_torrent else ("connections", _t("Bağlantı"))
+        for index, (key, text) in enumerate((("done", _t("İndirilen")), ("eta", _t("Kalan süre")), last)):
+            if index:
+                dot = QLabel("·")
+                dot.setObjectName("settingsNote")
+                summary.addWidget(dot)
+                if key == "eta":
+                    self._eta_dot = dot
+            self.lbl[key] = QLabel()
+            self.lbl[key].setObjectName("settingsNote")
             self.lbl[key].setTextInteractionFlags(Qt.TextSelectableByMouse)
-            text_layout.addWidget(caption)
-            text_layout.addWidget(self.lbl[key])
-            card_layout.addLayout(text_layout, 1)
-            self._info_cards.append(card)
-        self._info_columns = 4
-        for index, card in enumerate(self._info_cards):
-            self.info_grid.addWidget(card, 0, index)
-        l1.addLayout(self.info_grid)
+            self.lbl[key].setToolTip(text)
+            self.lbl[key].setAccessibleName(text)
+            summary.addWidget(self.lbl[key])
+        summary.addStretch(1)
+        l1.addLayout(summary)
+        if self.is_torrent:
+            self.lbl["connections"] = QLabel()  # eş sayısı yukarıdaki "Eşler / Seed" değerinde
+        else:
+            resume = QHBoxLayout()
+            resume.setSpacing(8)
+            self.resume_dot = StatusDot("ok")
+            resume.addWidget(self.resume_dot)
+            self.lbl["resume"] = _wrap_settings_label(QLabel())
+            self.lbl["resume"].setTextInteractionFlags(Qt.TextSelectableByMouse)
+            resume.addWidget(self.lbl["resume"], 1)
+            l1.addLayout(resume)
 
         fields = []
         if self.is_torrent:
@@ -1255,10 +1274,8 @@ class ProgressDialog(QDialog):
         elif it.kind == "hls":
             fields.append(("parts", _t("Video parçaları")))
         if fields:
-            state_card = QFrame()
-            state_card.setObjectName("progressCard")
-            state_layout = QGridLayout(state_card)
-            state_layout.setContentsMargins(14, 10, 14, 10)
+            state_layout = QGridLayout()
+            state_layout.setContentsMargins(0, 0, 0, 0)
             for row, (key, text) in enumerate(fields):
                 caption = _wrap_settings_label(QLabel(text))
                 caption.setObjectName("settingsNote")
@@ -1268,18 +1285,26 @@ class ProgressDialog(QDialog):
                 self.lbl[key].setTextInteractionFlags(Qt.TextSelectableByMouse)
                 state_layout.addWidget(self.lbl[key], row, 1)
             state_layout.setColumnStretch(1, 1)
-            l1.addWidget(state_card)
+            l1.addLayout(state_layout)
 
-        self.btn_details = QPushButton(_t("Ayrıntıları gizle"))
-        self.btn_details.setObjectName("transferLink")
+        # Ayrıntılar (bağlantı çubuğu ve tablosu) kapalı başlar.
+        self.btn_details = QPushButton(_t("Ayrıntıları göster"))
+        self.btn_details.setObjectName("dialogDisclosure")
+        self.btn_details.setProperty("rtl", i18n.is_rtl())
         self.btn_details.setAutoDefault(False)
         self.btn_details.setCheckable(True)
-        self.btn_details.setChecked(True)
+        self.btn_details.setChecked(False)
         self.btn_details.clicked.connect(self._toggle_details)
         l1.addWidget(self.btn_details, 0, Qt.AlignLeading)
         self.details = QWidget()
+        self.details.hide()
         ld = QVBoxLayout(self.details)
         ld.setContentsMargins(0, 0, 0, 0)
+        ld.setSpacing(10)
+        self.bar = SegmentBar()
+        self.bar.setFixedHeight(8)
+        self.bar.setAccessibleName(_t("Bağlantı"))
+        ld.addWidget(self.bar)
         if self.is_torrent:
             cap = QLabel(_t("Dosyalar ve indirme ilerlemesi"))
             cap.setObjectName("settingsSection")
@@ -1316,7 +1341,7 @@ class ProgressDialog(QDialog):
         limit_card = QFrame()
         limit_card.setObjectName("progressCard")
         f2 = QVBoxLayout(limit_card)
-        f2.setContentsMargins(20, 16, 20, 22)
+        f2.setContentsMargins(0, 8, 0, 8)
         f2.setSpacing(18)
         cur = int(it.extra.get("speed_limit_kb") or 0)
         self.lim_on = ToggleSwitch(_t("Bu indirme için hız sınırı kullan"))
@@ -1366,7 +1391,7 @@ class ProgressDialog(QDialog):
         complete_card = QFrame()
         complete_card.setObjectName("progressCard")
         l3 = QVBoxLayout(complete_card)
-        l3.setContentsMargins(20, 16, 20, 18)
+        l3.setContentsMargins(0, 8, 0, 8)
         l3.setSpacing(16)
         self.oc = {}
         self.oc["show_dialog"] = ToggleSwitch(_t("Tamamlandı penceresini göster"))
@@ -1403,6 +1428,10 @@ class ProgressDialog(QDialog):
         complete_layout.addWidget(complete_card)
         complete_layout.addStretch()
         self.tabs.currentIndexChanged.connect(self.pages.setCurrentIndex)
+        self.tabs.currentIndexChanged.connect(lambda _: self._fit(grow_only=True))
+        for index in range(self.pages.count()):
+            self.tabs._layout.setStretch(index, 0)
+        self.tabs._layout.addStretch(1)
         for sequence, step in (("Ctrl+Tab", 1), ("Ctrl+Shift+Tab", -1)):
             shortcut = QShortcut(QKeySequence(sequence), self)
             shortcut.activated.connect(lambda step=step: self.tabs.setCurrentIndex(
@@ -1445,8 +1474,12 @@ class ProgressDialog(QDialog):
         theme.notifier.changed.connect(self._refresh_theme)
         self._refresh_theme()
         self.update_view()
+        self._fit()  # ayrıntılar kapalıyken kısa açılır
         self.timer.start()
         self.anim.start()
+
+    def _fit(self, grow_only=False):
+        _fit_dialog_height(self, self.pages, self.pages.currentWidget(), grow_only)
 
     def _page(self, text, visible=True):
         page = QWidget()
@@ -1490,29 +1523,22 @@ class ProgressDialog(QDialog):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if not hasattr(self, "_info_cards"):
-            return
         if hasattr(self, "table") and not self.is_torrent:
             self.table.resizeRowsToContents()
-        columns = 4 if self.width() >= 900 else 2
-        if columns != self._info_columns:
-            self._info_columns = columns
-            for card in self._info_cards:
-                self.info_grid.removeWidget(card)
-            for index, card in enumerate(self._info_cards):
-                self.info_grid.addWidget(card, index // columns, index % columns)
+
+    def _disclosure_icon(self):
+        return theme.icon("collapse" if self.btn_details.isChecked() else "disclose_rtl" if i18n.is_rtl() else "disclose")
 
     def _refresh_theme(self):
-        self.file_tile.update()
         self.bar.update()
-        for label, name in self._icons:
-            label.setPixmap(theme.icon(name, "ok" if name == "st_done" else "accent").pixmap(26, 26))
+        if hasattr(self, "resume_dot"):
+            self.resume_dot.update()
         for key in ("none", "exit", "sleep", "shutdown"):
             self.oc[key].refresh_icons()
         for control in (self.lim_on, self.oc["show_dialog"]):
             control.update()
         self.btn_folder.setIcon(theme.icon("folder", "accent"))
-        self.btn_details.setIcon(theme.icon("collapse" if self.btn_details.isChecked() else "chevron"))
+        self.btn_details.setIcon(self._disclosure_icon())
         self._update_toggle_icon()
         if hasattr(self, "smooth"):
             self.update_view()
@@ -1584,7 +1610,7 @@ class ProgressDialog(QDialog):
                     conns.append((index, max(0, pos - a), b - a + 1,
                                   _t("Tamamlandı") if complete else STATUS_TEXT.get(it.status, it.status)))
             conns.sort(key=lambda row: row[0])
-        self.lbl["connections"].setText(f"{active_count} / {max(it.connections, len(conns))}")
+        self.lbl["connections"].setText(_t("{0} bağlantı").format(f"{active_count}/{max(it.connections, len(conns))}"))
         if running:
             smooth = []
             for n, done, ctotal, info in conns:
@@ -1650,9 +1676,10 @@ class ProgressDialog(QDialog):
         self.details.setVisible(show)
         self.btn_details.setChecked(show)
         self.btn_details.setText(_t("Ayrıntıları gizle") if show else _t("Ayrıntıları göster"))
-        self.btn_details.setIcon(theme.icon("collapse" if show else "chevron"))
+        self.btn_details.setIcon(self._disclosure_icon())
         if show:
             self.update_view()
+        self._fit(grow_only=show)  # açılınca büyür, kapanınca geri küçülür
 
     def _set_limit_controls(self, enabled):
         for widget in (self.lim_kb, self.limit_unit, self.limit_presets):
@@ -1732,7 +1759,10 @@ class ProgressDialog(QDialog):
             st += f" — {it.error}"
         self.lbl["status"].setText(st)
         self._tone(self.lbl["status"], "bad" if it.error or it.status == "error" else "ok" if it.status == "completed" else "muted")
-        self.lbl["eta"].setText(fmt_time(it.eta()) or "—")
+        eta = fmt_time(it.eta())
+        self.lbl["eta"].setText(_t("{0} kaldı").format(eta) if eta else "")
+        self.lbl["eta"].setVisible(bool(eta))
+        self._eta_dot.setVisible(bool(eta))
         self._animate()  # yüzde, indirilen, hız: akıcı gösterim
         running = it.status in ("downloading", "connecting", "seeding")
         self.btn_toggle.setText(_t("Duraklat") if running else _t("Devam Et"))
@@ -1740,7 +1770,7 @@ class ProgressDialog(QDialog):
 
         if self.is_torrent:
             self.lbl["connections"].setText(f"{it.peers} / —")
-            self.lbl["peers"].setText(f"{it.peers} / {it.seeds}")
+            self.lbl["peers"].setText(f"{_t('Eşler / Seed')}: {it.peers} / {it.seeds}")
             self.lbl["upload"].setText(fmt_speed(it.ul_speed) or "—")
             self.bar.set_data(it.size, [[0, (it.size or 1) - 1, it.done_bytes]])
             files = self.mgr.torrents.files(it.id) if self.mgr.torrents else []
@@ -1755,12 +1785,13 @@ class ProgressDialog(QDialog):
             n_done, n_total = len(it.extra.get("done", [])), it.extra.get("total")
             self.lbl["parts"].setText(f"{n_done} / {n_total}" if n_total else "—")
         if not self.is_torrent:
-            txt = _t("Evet") if it.resumable else _t("Hayır")
+            txt = _t("Devam ettirilebilir") if it.resumable else _t("Devam ettirilemez")
             lim = it.extra.get("server_conn_limit") if isinstance(it.extra, dict) else None
             if lim and lim < it.connections:
                 txt += _t("   ·   Sunucu en fazla {0} bağlantıya izin veriyor").format(lim)
             self.lbl["resume"].setText(txt)
             self._tone(self.lbl["resume"], "ok" if it.resumable else "muted")
+            self.resume_dot.set_key("ok" if it.resumable else "muted")
         if it.status == "completed":
             self.close()
 
@@ -2007,7 +2038,7 @@ class _SettingsCard(QFrame):
         super().__init__(parent)
         self.setObjectName("settingsCard")
         self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(12, 3, 12, 3)
+        self._layout.setContentsMargins(0, 0, 0, 0)  # kartsız: satırlar arasında yalnızca ince ayırıcı
         self._layout.setSpacing(0)
 
     def addRow(self, *args):
@@ -2104,11 +2135,17 @@ class OptionsDialog(QDialog):
         f.addRow(self.clip)
         self.retry = ToggleSwitch(_t("Bağlantı sorunuyla duran indirmeyi otomatik yeniden dene"))
         self.retry.setChecked(s.get("auto_retry", True))
-        self.retry_n = QSpinBox(minimum=1, maximum=20, value=s.get("auto_retry_count", 3))
+        self.retry_n = QSpinBox(minimum=1, maximum=20, value=s.get("auto_retry_count", 3), suffix=_t(" deneme"))
         self.retry_d = QSpinBox(minimum=5, maximum=3600, value=s.get("auto_retry_delay", 30), suffix=_t(" sn"))
-        f.addRow(self.retry)
-        f.addRow(_t("En fazla:"), self.retry_n)
-        f.addRow(_t("Bekleme:"), self.retry_d)
+        retry_row = QHBoxLayout()  # tek satır: deneme sayısı, bekleme ve anahtar
+        retry_row.setContentsMargins(0, 0, 0, 0)
+        retry_row.setSpacing(8)
+        for w, text in ((self.retry_n, _t("En fazla:")), (self.retry_d, _t("Bekleme:"))):
+            w.setAccessibleName(text.rstrip(":"))
+            w.setToolTip(text.rstrip(":"))
+            retry_row.addWidget(w)
+        retry_row.addWidget(self.retry)
+        f.addRow(self.retry.text(), retry_row)
         for w in (self.retry_n, self.retry_d):
             w.setEnabled(self.retry.isChecked())
             self.retry.toggled.connect(w.setEnabled)
@@ -2289,6 +2326,7 @@ class OptionsDialog(QDialog):
         bb.accepted.connect(self._save)
         bb.rejected.connect(self.reject)
         bb.button(QDialogButtonBox.Ok).setDefault(True)
+        bb.button(QDialogButtonBox.Ok).setProperty("role", "primary")  # tek birincil eylem mavi dolu
         footer = QFrame()
         footer.setObjectName("settingsFooter")
         footer_layout = QHBoxLayout(footer)
@@ -2330,13 +2368,12 @@ class OptionsDialog(QDialog):
         self.navigation.addItem(item)
 
     def _refresh_icons(self):
-        for index, name in enumerate(("settings", "link", "video", "magnet", "folder")):
-            self.navigation.item(index).setIcon(theme.icon(name))
         for toggle in self.findChildren(ToggleSwitch):
             toggle.update()
 
     def _with_browse(self, edit, picker):
         b = QPushButton(_t("Gözat"))
+        b.setObjectName("transferLink")
         b.setAutoDefault(False)
 
         def pick():
@@ -3050,7 +3087,7 @@ ACTION_TEXT = {}
 
 @i18n.on_change
 def _column_texts():
-    COLUMNS[:] = ["", _t("Dosya Adı"), _t("Boyut"), _t("Durum"), _t("Kalan Süre"), _t("Aktarım Hızı"), _t("Son Deneme"),
+    COLUMNS[:] = ["", _t("Dosya Adı"), _t("Boyut"), _t("İlerleme"), _t("Kalan Süre"), _t("Aktarım Hızı"), _t("Son Deneme"),
                   _t("Açıklama"), _t("Eklenme"), _t("Bitiş")]
     ACTION_TEXT.update(play=_t("Devam Et"), pause=_t("Durdur"), folder=_t("Klasörü aç"), retry=_t("Tekrar Dene"),
                        more=_t("Diğer"))
@@ -3070,8 +3107,8 @@ PROGRESS_ROLE = Qt.UserRole + 1   # durum hücresi: 0..1 ilerleme (yoksa None)
 TONE_ROLE = Qt.UserRole + 2       # durum hücresi: renk (accent | ok | bad | muted)
 SEG_ROLE = Qt.UserRole + 3        # durum hücresi: (toplam, [(başlangıç, bitiş, konum), ...]) parçalı çubuk için
 DETAIL_ROLE = Qt.UserRole + 4     # durum hücresi: sağdaki miktar yazısı ("317 MB / 512 MB")
-ACTIVE_ROLE = Qt.UserRole + 2     # ad hücresi: iniyor mu (simge zemini vurgulu)
-SUB_ROLE = Qt.UserRole + 3        # ad hücresi: alt satır (kategori, bağlantı sayısı, bitiş zamanı…)
+ACTIVE_ROLE = Qt.UserRole + 2     # ad hücresi: iniyor mu
+SUB_ROLE = Qt.UserRole + 3        # ad hücresi: alt satır (boyut, durum yazısı, durumun rengi)
 ACTIONS_ROLE = Qt.UserRole + 3    # işlem hücresi: düğme adları
 GROUP_ROLE = Qt.UserRole + 5      # grup satırı: (başlık, sayı)
 
@@ -3148,22 +3185,32 @@ def draw_check_box(p, box, checked):
 
 
 class CheckHeader(QHeaderView):
-    """Liste başlığı: ilk sütundaki tümünü seç kutusu satırlardakiyle aynı çizilir."""
+    """Liste başlığı: ilk sütundaki tümünü seç kutusu satırlardakiyle aynı çizilir. Kutu yalnızca seçim varken ya da
+    fare başlığın üstündeyken görünür (tıklaması her zaman çalışır, ipucu da kalır)."""
 
     def __init__(self, parent=None):
         super().__init__(Qt.Horizontal, parent)
         self.setSectionsClickable(True)  # QTableView'ın kendi başlığındaki varsayılanlar
         self.setHighlightSections(True)
         self.all_checked = False
+        self.any_checked = False
+        self._hover = False
 
-    def set_all_checked(self, on):
-        if on != self.all_checked:
-            self.all_checked = on
+    def set_all_checked(self, on, any_on=None):
+        any_on = on if any_on is None else bool(any_on)
+        if (on, any_on) != (self.all_checked, self.any_checked):
+            self.all_checked, self.any_checked = on, any_on
             self.viewport().update()
+
+    def viewportEvent(self, e):
+        if e.type() in (QEvent.Enter, QEvent.Leave):
+            self._hover = e.type() == QEvent.Enter
+            self.viewport().update()
+        return super().viewportEvent(e)
 
     def paintSection(self, p, rect, i):
         super().paintSection(p, rect, i)
-        if i == SEL and rect.isValid():
+        if i == SEL and rect.isValid() and (self.all_checked or self.any_checked or self._hover):
             c = QRectF(rect).center()
             draw_check_box(p, QRectF(c.x() - 8, c.y() - 8, 16, 16), self.all_checked)
 
@@ -3179,8 +3226,9 @@ class DashDelegate(QStyledItemDelegate):
 
 
 class CheckDelegate(QStyledItemDelegate):
-    """Seçim sütunu: temaya göre çizilen, her iki temada da belirgin onay kutusu. Grup satırı da bu sütundan
-    bütün satıra yayılır (İndiriliyor, Bekleyen, Tamamlanan)."""
+    """Seçim sütunu: temaya göre çizilen, her iki temada da belirgin onay kutusu; işaretli değilse yalnızca fare
+    satırın üstündeyken görünür. Grup satırı da bu sütundan bütün satıra yayılır (İndiriliyor, Bekleyen, Tamamlanan):
+    yalnızca soluk, kalın başlık (sayısı ipucunda)."""
 
     def paint(self, p, option, index):
         group = index.data(GROUP_ROLE)
@@ -3188,13 +3236,11 @@ class CheckDelegate(QStyledItemDelegate):
             p.save()
             r = option.rect
             p.fillRect(r, QColor(theme.T["bg"]))
-            p.setPen(QColor(theme.T["border_soft"]))
-            p.drawLine(r.bottomLeft(), r.bottomRight())
             f = QFont(option.font)
             f.setBold(True)
             p.setFont(f)
             p.setPen(QColor(theme.T["muted"]))
-            p.drawText(r.adjusted(14, 0, -14, 0), Qt.AlignLeft | Qt.AlignVCenter, f"{group[0]}   {group[1]}")
+            p.drawText(r.adjusted(14, 4, -14, 0), Qt.AlignLeft | Qt.AlignVCenter, group[0])
             p.restore()
             return
         opt = QStyleOptionViewItem(option)
@@ -3204,8 +3250,9 @@ class CheckDelegate(QStyledItemDelegate):
         opt.text = ""
         style = opt.widget.style() if opt.widget else QApplication.style()
         style.drawControl(QStyle.CE_ItemViewItem, opt, p, opt.widget)  # zemin ve seçim
-        c = QRectF(opt.rect).center()
-        draw_check_box(p, QRectF(c.x() - 8, c.y() - 8, 16, 16), checked)
+        if checked or getattr(opt.widget, "hover_row", None) == index.row():
+            c = QRectF(opt.rect).center()
+            draw_check_box(p, QRectF(c.x() - 8, c.y() - 8, 16, 16), checked)
         p.save()
         if opt.state & QStyle.State_Selected:  # seçili satırın kenarındaki vurgu çizgisi
             p.setPen(Qt.NoPen)
@@ -3216,7 +3263,8 @@ class CheckDelegate(QStyledItemDelegate):
 
 
 class NameDelegate(QStyledItemDelegate):
-    """Dosya adı sütunu: dosya türü simgesi, kalın ad, altında soluk bilgi satırı."""
+    """Dosya adı sütunu: dosya türü simgesi (kutusuz), ad, altında tek soluk satır: boyut · durum. Hata durumu
+    kırmızı yazılır; ayrıntılar (tür, bağlantı, bitiş zamanı) hücrenin ipucundadır."""
 
     def paint(self, p, option, index):
         opt = QStyleOptionViewItem(option)
@@ -3226,31 +3274,40 @@ class NameDelegate(QStyledItemDelegate):
         style = opt.widget.style() if opt.widget else QApplication.style()
         style.drawControl(QStyle.CE_ItemViewItem, opt, p, opt.widget)  # zemin ve seçim
         r = opt.rect
-        tile = QStyle.visualRect(opt.direction, r, QRect(r.left() + 2, r.center().y() - 18, 36, 36))
-        text_r = QStyle.visualRect(opt.direction, r, QRect(r.left() + 48, r.top(), max(0, r.width() - 52), r.height()))
-        active = index.data(ACTIVE_ROLE)
+        tile = QStyle.visualRect(opt.direction, r, QRect(r.left() + 8, r.center().y() - 11, 22, 22))
+        text_r = QStyle.visualRect(opt.direction, r, QRect(r.left() + 42, r.top(), max(0, r.width() - 46), r.height()))
         p.save()
         p.setRenderHint(QPainter.Antialiasing)
-        _draw_file_tile(p, tile, icon, active)
-        f = QFont(opt.font)
-        f.setBold(True)
-        fm = QFontMetrics(f)
-        sub = index.data(SUB_ROLE) or ""
+        icon.paint(p, tile)
+        fm = opt.fontMetrics
+        lead, status, tone = index.data(SUB_ROLE) or ("", "", "muted")
         mid = r.center().y()
-        top = QRect(text_r.left(), mid - fm.height() - (0 if sub else -fm.height() // 2), text_r.width(), fm.height())
-        p.setFont(f)
+        top = QRect(text_r.left(), mid - fm.height() - (0 if lead or status else -fm.height() // 2), text_r.width(),
+                    fm.height())
         p.setPen(QColor(theme.T["text"]))
         p.drawText(top, Qt.AlignLeft | Qt.AlignVCenter, fm.elidedText(text, Qt.ElideRight, top.width()))
-        if sub:
-            p.setFont(opt.font)
+        low = QRect(text_r.left(), mid + 2, text_r.width(), fm.height())
+        if lead:
+            lead = fm.elidedText(lead + (" · " if status else ""), Qt.ElideRight, low.width())
             p.setPen(QColor(theme.T["muted"]))
-            low = QRect(text_r.left(), mid + 1, text_r.width(), opt.fontMetrics.height())
-            p.drawText(low, Qt.AlignLeft | Qt.AlignVCenter, opt.fontMetrics.elidedText(sub, Qt.ElideRight, low.width()))
+            p.drawText(low, Qt.AlignLeft | Qt.AlignVCenter, lead)
+            used = fm.horizontalAdvance(lead)  # durum yazısı bunun hemen ardından (Arapçada solunda)
+            low = QRect(low.left() + (0 if opt.direction == Qt.RightToLeft else used), low.top(),
+                        max(0, low.width() - used), low.height())
+        if status and low.width() > 0:
+            p.setPen(QColor(theme.T.get(tone, theme.T["muted"])))
+            p.drawText(low, Qt.AlignLeft | Qt.AlignVCenter, fm.elidedText(status, Qt.ElideRight, low.width()))
         p.restore()
 
 
 class ActionDelegate(QStyledItemDelegate):
-    """Satırdaki işlem düğmeleri: fare üstündeyken zemin alır, tıklamayı DownloadTable yakalar."""
+    """Satırdaki işlem düğmeleri: yalnızca fare satırın üstündeyken ya da satır seçiliyken görünür (klavyeyle seçilen
+    satırda da); fare düğmenin üstündeyken zemin alır, tıklamayı DownloadTable yakalar. Ekran okuyucu düğme adlarını
+    hücrenin erişilebilir metninden okur."""
+
+    @staticmethod
+    def shown(option, index):
+        return bool(option.state & QStyle.State_Selected) or getattr(option.widget, "hover_row", None) == index.row()
 
     BUTTON = 30
     GAP = 4
@@ -3273,6 +3330,8 @@ class ActionDelegate(QStyledItemDelegate):
         opt.text = ""
         style = opt.widget.style() if opt.widget else QApplication.style()
         style.drawControl(QStyle.CE_ItemViewItem, opt, p, opt.widget)  # zemin ve seçim
+        if not self.shown(opt, index):
+            return
         hover = getattr(opt.widget, "action_hover", None)
         p.save()
         p.setRenderHint(QPainter.Antialiasing)
@@ -3299,45 +3358,39 @@ class ActionDelegate(QStyledItemDelegate):
 
 
 class StatusDelegate(QStyledItemDelegate):
-    """Durum sütunu: ilerleme varsa yüzde, miktar ve altında bağlantı başına parçalı çubuk; yoksa simge ve yazı.
-    Tamamlanan yeşil, hatalı kırmızı yazılır. Renkler temaya göre."""
+    """İlerleme sütunu: tek satırda yüzde ve bağlantı başına parçalı çubuk (durum yazısı dosya adının altında);
+    ilerleme yoksa bitende yeşil simge, diğerlerinde soluk tire. İnen miktar hücrenin ipucundadır."""
 
     def paint(self, p, option, index):
         opt = QStyleOptionViewItem(option)
         self.initStyleOption(opt, index)
-        text, icon, opt.text, opt.icon = opt.text, QIcon(opt.icon), "", QIcon()
+        icon, opt.text, opt.icon = QIcon(opt.icon), "", QIcon()
         opt.features &= ~QStyleOptionViewItem.HasDecoration
         style = opt.widget.style() if opt.widget else QApplication.style()
         style.drawControl(QStyle.CE_ItemViewItem, opt, p, opt.widget)  # zemin ve seçim
         frac = index.data(PROGRESS_ROLE)
         tone = index.data(TONE_ROLE) or "text"
         r = opt.rect.adjusted(8, 0, -8, 0)
-        color = QColor(theme.T.get(tone, theme.T["text"]))
-        f = QFont(opt.font)
-        f.setBold(tone in ("accent", "ok", "bad"))
-        fm = QFontMetrics(f)
         p.save()
         p.setRenderHint(QPainter.Antialiasing)
         if frac is None:
-            if not icon.isNull():
-                ic = QStyle.visualRect(opt.direction, r, QRect(r.left(), r.center().y() - 8, 16, 16))
-                icon.paint(p, ic)
-                r = QStyle.visualRect(opt.direction, opt.rect, QRect(r.left() + 22, r.top(), r.width() - 22, r.height()))
-            p.setFont(f)
-            p.setPen(color)
-            p.drawText(r, Qt.AlignVCenter | Qt.AlignLeft, fm.elidedText(text, Qt.ElideRight, r.width()))
+            if tone == "ok" and not icon.isNull():
+                icon.paint(p, QStyle.visualRect(opt.direction, r, QRect(r.left(), r.center().y() - 9, 18, 18)))
+            else:
+                p.setPen(QColor(theme.T["muted"]))
+                p.drawText(r, Qt.AlignVCenter | Qt.AlignLeft, DASH)
             p.restore()
             return
-        top = QRect(r.left(), r.center().y() - 15, r.width(), 20)
-        detail = index.data(DETAIL_ROLE) or ""
-        p.setFont(opt.font)
-        p.setPen(QColor(theme.T["muted"]))
-        p.drawText(top, Qt.AlignVCenter | Qt.AlignRight, detail)  # Arapçada Qt kendiliğinden yer değiştirir
-        used = opt.fontMetrics.horizontalAdvance(detail) + 8 if detail else 0
+        f = QFont(opt.font)
+        f.setBold(tone == "accent")
+        fm = QFontMetrics(f)
+        pct = _ltr(list_pct(frac))
+        width = fm.horizontalAdvance("%100") + 12
         p.setFont(f)
-        p.setPen(color)
-        p.drawText(top, Qt.AlignVCenter | Qt.AlignLeft, fm.elidedText(text, Qt.ElideRight, max(0, top.width() - used)))
-        self._draw_bar(p, QRectF(r.left(), r.center().y() + 8, r.width(), 6), frac, index.data(SEG_ROLE),
+        p.setPen(QColor(theme.T["accent"] if tone == "accent" else theme.T["muted"]))
+        p.drawText(r, Qt.AlignVCenter | Qt.AlignLeft, pct)
+        bar = QStyle.visualRect(opt.direction, r, QRect(r.left() + width, r.center().y() - 2, max(0, r.width() - width), 5))
+        self._draw_bar(p, QRectF(bar), frac, index.data(SEG_ROLE),
                        theme.T["accent"] if tone in ("accent", "ok") else theme.T["muted"], opt.direction)
         p.restore()
 
@@ -3380,14 +3433,26 @@ class DownloadTable(QTableWidget):
     def __init__(self, *a):
         super().__init__(*a)
         self.action_hover = None
+        self.hover_row = None  # fare altındaki satır: onay kutusu ve satır düğmeleri yalnızca orada görünür
         self._action_pressed = None
         self.setHorizontalHeader(CheckHeader(self))
         self.setMouseTracking(True)
 
+    def _set_hover_row(self, row):
+        row = None if row is None or row < 0 else row
+        if row == self.hover_row:
+            return
+        old, self.hover_row = self.hover_row, row
+        for r in (old, row):  # yalnızca iki satır yeniden çizilir
+            if r is not None and r < self.rowCount():
+                self.viewport().update(QRect(0, self.rowViewportPosition(r), self.viewport().width(), self.rowHeight(r)))
+
     def _action_at(self, pos):
-        """Bu noktadaki işlem düğmesi: (satır, ad) ya da None."""
+        """Bu noktadaki (görünen) işlem düğmesi: (satır, ad) ya da None."""
         idx = self.indexAt(pos)
         if not idx.isValid() or idx.column() != ACTIONS:
+            return None
+        if idx.row() != self.hover_row and not self.selectionModel().isSelected(idx):
             return None
         rects = ActionDelegate.rects(self.visualRect(idx), idx.data(ACTIONS_ROLE) or (), self.fontMetrics(),
                                      self.layoutDirection())
@@ -3423,6 +3488,7 @@ class DownloadTable(QTableWidget):
         return self.model().index(r, col) if 0 <= r < self.rowCount() else cur
 
     def mousePressEvent(self, e):
+        self._set_hover_row(self.rowAt(e.position().toPoint().y()))
         self._action_pressed = self._action_at(e.position().toPoint()) if e.button() == Qt.LeftButton else None
         super().mousePressEvent(e)
 
@@ -3434,6 +3500,7 @@ class DownloadTable(QTableWidget):
             self.action_clicked.emit(*hit)
 
     def mouseMoveEvent(self, e):
+        self._set_hover_row(self.rowAt(e.position().toPoint().y()))
         hover = self._action_at(e.position().toPoint())
         if hover != self.action_hover:
             self.action_hover = hover
@@ -3441,16 +3508,20 @@ class DownloadTable(QTableWidget):
         super().mouseMoveEvent(e)
 
     def leaveEvent(self, e):
+        self._set_hover_row(None)
         if self.action_hover:
             self.action_hover = None
             self.viewport().update()
         super().leaveEvent(e)
 
     def viewportEvent(self, e):
-        if e.type() == QEvent.Leave and self.action_hover:  # başlığa geçerken tablonun kendi leaveEvent'i gelmez
-            self.action_hover = None
-            self.viewport().update()
+        if e.type() == QEvent.Leave:  # başlığa geçerken tablonun kendi leaveEvent'i gelmez
+            self._set_hover_row(None)
+            if self.action_hover:
+                self.action_hover = None
+                self.viewport().update()
         if e.type() == QEvent.ToolTip:
+            self._set_hover_row(self.rowAt(e.pos().y()))
             hit = self._action_at(e.pos())
             if hit:
                 QToolTip.showText(e.globalPos(), ACTION_TEXT.get(hit[1], ""), self.viewport())
@@ -3469,7 +3540,8 @@ class ElidedLabel(QLabel):
 
 
 class PageHeader(QWidget):
-    """Sayfa başlığı her zaman tam görünür; önce arama kutusu daralır ya da gizlenir, sonra düğmeler simgeye iner."""
+    """Sayfa başlığı her zaman tam görünür; dar pencerede arama kutusu daralır ya da gizlenir. İşlem düğmeleri
+    yalnızca simgedir (adları ipucunda ve ekran okuyucuda)."""
     SEARCH_MIN = 60
 
     def _wanted(self):
@@ -3491,20 +3563,8 @@ class PageHeader(QWidget):
             return
         sp = self.layout().spacing()
         title = self.title.sizeHint().width()
-        sums = []
-        for style in (Qt.ToolButtonTextBesideIcon, Qt.ToolButtonIconOnly):
-            for b in self.buttons[:-1]:
-                b.setToolButtonStyle(style)
-            sums.append(sum(b.sizeHint().width() + sp for b in self.buttons))
-        wide, narrow = sums
-        icons = self.width() - title < wide
-        if icons:
-            for b in self.buttons[:-1]:
-                b.setToolButtonStyle(Qt.ToolButtonIconOnly)
-        else:
-            for b in self.buttons[:-1]:
-                b.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        room = self.width() - title - (narrow if icons else wide) - sp
+        narrow = sum(b.sizeHint().width() + sp for b in self.buttons)
+        room = self.width() - title - narrow - sp
         self.title.setMinimumWidth(title)
         self.search.setVisible(room >= self.SEARCH_MIN or self._wanted())
         self.search.setMaximumWidth(max(self.SEARCH_MIN, min(250, room)))
@@ -3538,7 +3598,7 @@ class SearchEdit(QLineEdit):
 
 
 class SearchBox(QFrame):
-    """Sayfa başlığındaki arama kutusu: büyüteç, yazı alanı ve Ctrl F rozeti."""
+    """Sayfa başlığındaki arama kutusu: büyüteç ve alt çizgili yazı alanı (kısayol ipucunda)."""
 
     def __init__(self):
         super().__init__()
@@ -3548,7 +3608,7 @@ class SearchBox(QFrame):
         self.setMaximumWidth(250)
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(10, 6, 8, 6)
+        lay.setContentsMargins(2, 6, 2, 6)
         lay.setSpacing(7)
         self.icon_lbl = QLabel()
         self.icon_lbl.setFixedSize(16, 16)
@@ -3556,18 +3616,12 @@ class SearchBox(QFrame):
         self.edit.setObjectName("searchEdit")
         self.edit.setPlaceholderText(_t("Dosya ara"))
         self.edit.setMinimumWidth(0)
+        self.edit.setToolTip(f"{_t('Dosya ara')} (Ctrl+F)")
         self.edit.installEventFilter(self)
-        self.badge = QLabel("Ctrl F")
-        self.badge.setObjectName("kbd")
-        self.edit.textChanged.connect(lambda t: self.badge.setVisible(not t and self.width() >= 170))
-        for w in (self.icon_lbl, self.edit, self.badge):
+        for w in (self.icon_lbl, self.edit):
             lay.addWidget(w)
         lay.setStretch(1, 1)
         self.refresh_icon()
-
-    def resizeEvent(self, e):
-        super().resizeEvent(e)
-        self.badge.setVisible(not self.edit.text() and e.size().width() >= 170)
 
     def refresh_icon(self):
         self.icon_lbl.setPixmap(theme.icon("search", "muted").pixmap(16, 16))
@@ -3581,13 +3635,12 @@ class SearchBox(QFrame):
 
 
 class SpeedGraph(QWidget):
-    """Son ~60 saniyenin toplam hızı: vurgu renginde çizgi, altı aşağı doğru solan dolgu."""
+    """Son ~60 saniyenin toplam hızı: vurgu renginde ince, dolgusuz çizgi."""
     SAMPLES = 60
 
     def __init__(self):
         super().__init__()
-        self.setMinimumSize(0, 48)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setFixedSize(120, 22)
         self.samples = deque([0.0] * self.SAMPLES, maxlen=self.SAMPLES)
 
     def push(self, value):
@@ -3596,29 +3649,17 @@ class SpeedGraph(QWidget):
             self.update()
 
     def paintEvent(self, _e):
-        w, h, pad = self.width(), self.height(), 4
+        w, h, pad = self.width(), self.height(), 3
         peak = max(max(self.samples), 1.0)
         n = len(self.samples)
         pts = [QPointF(i * (w - 1) / (n - 1), h - pad - v / peak * (h - 2 * pad)) for i, v in enumerate(self.samples)]
         line = QPainterPath(pts[0])
         for pt in pts[1:]:
             line.lineTo(pt)
-        area = QPainterPath(line)
-        area.lineTo(w - 1, h)
-        area.lineTo(0, h)
-        area.closeSubpath()
         color = QColor(theme.T["accent"])
-        fade = QLinearGradient(0, 0, 0, h)
-        top = QColor(color)
-        top.setAlpha(110)
-        fade.setColorAt(0, top)
-        bottom = QColor(color)
-        bottom.setAlpha(0)
-        fade.setColorAt(1, bottom)
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        p.fillPath(area, fade)
-        pen = QPen(color, 2)
+        pen = QPen(color, 1.5)
         pen.setJoinStyle(Qt.RoundJoin)
         pen.setCapStyle(Qt.RoundCap)
         p.setPen(pen)
@@ -3707,6 +3748,7 @@ class MainWindow(QMainWindow):
         self.timer = QTimer(self, interval=500, timeout=self._tick)
         self.timer.start()
         self._smooth = {}  # iid -> SmoothProgress (listedeki akıcı yüzde/hız)
+        self._row_cache = {}
         self.anim = QTimer(self, interval=50, timeout=self._animate_rows)
         self.anim.start()
         self.refresh(force=True)
@@ -3871,7 +3913,7 @@ class MainWindow(QMainWindow):
         h.setSectionResizeMode(NAME, QHeaderView.Stretch)
         h.setSectionResizeMode(SEL, QHeaderView.Fixed)
         h.setSectionResizeMode(ACTIONS, QHeaderView.Fixed)
-        for c, w in ((SEL, 40), (SIZE, 85), (STATUS, 235), (ETA, 95), (SPEED, 105), (6, 130), (7, 150), (8, 130),
+        for c, w in ((SEL, 40), (SIZE, 85), (STATUS, 235), (ETA, 95), (SPEED, 150), (6, 130), (7, 150), (8, 130),
                      (9, 130), (ACTIONS, 125)):
             self.table.setColumnWidth(c, max(w, h.sectionSizeHint(c)) if c in (SIZE, ETA, SPEED) else w)  # uzun başlık kırpılmasın
         retry = self.table.fontMetrics().horizontalAdvance(ACTION_TEXT.get("retry", "")) + 20  # uzun çeviri sütundan taşmasın
@@ -3891,11 +3933,15 @@ class MainWindow(QMainWindow):
         if not st.get("columns_v2"):  # yeni görünüm: ek sütunlar başta kapalı, sütun başlığına sağ tıkla açılır
             st["hidden_columns"] = sorted({c for c in st.get("hidden_columns") or [] if isinstance(c, int)} | {6, 7, 8, 9})
             st["columns_v2"] = True
+        if not st.get("columns_v3"):  # sade görünüm: boyut ad altında, kalan süre hızın yanında; sütunları bir kez kapanır
+            st["hidden_columns"] = sorted({c for c in st.get("hidden_columns") or [] if isinstance(c, int)} | {SIZE, ETA})
+            st["columns_v3"] = True
         for c in st["hidden_columns"]:
             if isinstance(c, int) and NAME < c < len(COLUMNS):
                 self.table.setColumnHidden(c, True)
         self._auto_hidden = set()
         self.table.resized.connect(self._fit_columns)
+        self._speed_header()
 
         body = QWidget()
         lay = QHBoxLayout(body)
@@ -3913,6 +3959,7 @@ class MainWindow(QMainWindow):
         self.statusBar().addPermanentWidget(self.sel_lbl)
         self.speed_lbl = QLabel()
         self.statusBar().addPermanentWidget(self.speed_lbl)
+        self.speed_lbl.setVisible(not self.a_panel.isChecked())  # şerit açıkken toplam hız orada
         self.ver_lbl = QLabel(f"v{VERSION}")
         self.statusBar().addPermanentWidget(self.ver_lbl)
         self.extension_box = QWidget()
@@ -4007,8 +4054,9 @@ class MainWindow(QMainWindow):
         titles.setSpacing(0)
         self.page_title = ElidedLabel()
         self.page_title.setObjectName("pageTitle")
-        self.page_sub = ElidedLabel()
+        self.page_sub = ElidedLabel()  # sayılar başlığın ipucunda; alt satır gizli (sade görünüm)
         self.page_sub.setObjectName("pageSub")
+        self.page_sub.hide()
         for w in (self.page_title, self.page_sub):
             w.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)  # dar pencerede düğmeleri itmesin
             titles.addWidget(w)
@@ -4026,7 +4074,8 @@ class MainWindow(QMainWindow):
             b.setObjectName("headButton")
             b.setDefaultAction(a)
             b.setIconSize(QSize(16, 16))
-            b.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+            b.setToolButtonStyle(Qt.ToolButtonIconOnly)
+            b.setAccessibleName(a.text())
             header.buttons.append(b)
             head.addWidget(b)
         self._more_btn = QToolButton()
@@ -4037,7 +4086,7 @@ class MainWindow(QMainWindow):
         self._more_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self._more_btn.setPopupMode(QToolButton.InstantPopup)
         menu = QMenu(self._more_btn)
-        for a in (self.a_delete_done, None, self.a_group, self.a_panel):
+        for a in (self.a_delete_done, None, self.a_qstart, self.a_qstop, self.a_sched, None, self.a_group, self.a_panel):
             menu.addSeparator() if a is None else menu.addAction(a)
         self._more_btn.setMenu(menu)
         head.addWidget(self._more_btn)
@@ -4049,97 +4098,48 @@ class MainWindow(QMainWindow):
         frame = QFrame()
         frame.setObjectName("listFrame")
         fl = QVBoxLayout(frame)
-        fl.setContentsMargins(1, 6, 1, 0)  # başlık satırı yuvarlak köşelerin altında kalsın
+        fl.setContentsMargins(0, 0, 0, 0)
         fl.addWidget(self.table)
         lay.addWidget(frame, 1)
         return area
 
     def _build_speed_panel(self):
-        """Toplam hız, son dakikanın grafiği, etkin sayısı, kalan süre ve kuyruk kartı."""
+        """Liste üstünde tek satırlık ince şerit: toplam hız, son dakikanın küçük grafiği, etkin sayısı ve kalan süre.
+        Kuyruğun durumu şeridin ipucunda; kuyruk düğmeleri "Diğer" menüsünde."""
         panel = SpeedPanel()
         lay = QHBoxLayout(panel)
         lay.setSizeConstraint(QLayout.SetNoConstraint)
-        lay.setContentsMargins(18, 12, 12, 12)
+        lay.setContentsMargins(0, 0, 0, 2)
         lay.setSpacing(22)
-
-        total = QWidget()
-        total.setMinimumWidth(120)
-        tl = QVBoxLayout(total)
-        tl.setContentsMargins(0, 0, 0, 0)
-        tl.setSpacing(2)
-        cap = QLabel(_t("Toplam hız"))
-        cap.setObjectName("panelCap")
-        tl.addWidget(cap)
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(5)
+        row.setSpacing(4)
         self.sp_big = QLabel("0")
         self.sp_big.setObjectName("panelBig")
         self.sp_unit = QLabel("B/s")
         self.sp_unit.setObjectName("panelUnit")
         row.addWidget(self.sp_big)
-        row.addWidget(self.sp_unit, 0, Qt.AlignBottom)
-        row.addStretch(1)
-        tl.addLayout(row)
-        lay.addWidget(total)
-
+        row.addWidget(self.sp_unit)
+        lay.addLayout(row)
         self.sp_graph = SpeedGraph()
-        lay.addWidget(self.sp_graph, 1)
-
+        self.sp_graph.setToolTip(_t("Toplam hız"))
+        lay.addWidget(self.sp_graph)
         self.sp_active = QLabel("0")
         self.sp_eta = QLabel("–")
         for caption, w in ((_t("Etkin"), self.sp_active), (_t("Kalan süre"), self.sp_eta)):
+            sep = QFrame()
+            sep.setObjectName("panelSep")
+            sep.setFixedSize(1, 16)
+            lay.addWidget(sep)
             w.setObjectName("panelVal")
-            box = QWidget()
-            bl = QVBoxLayout(box)
-            bl.setContentsMargins(0, 0, 0, 0)
-            bl.setSpacing(2)
-            cap = QLabel(caption)
-            cap.setObjectName("panelCap")
-            bl.addWidget(cap)
-            bl.addWidget(w)
-            box.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Preferred)
-            lay.addWidget(box)
-
-        card = QFrame()
-        card.setObjectName("queueCard")
-        card.setMinimumWidth(200)
-        cl = QVBoxLayout(card)
-        cl.setContentsMargins(12, 9, 12, 10)
-        cl.setSpacing(8)
-        top = QHBoxLayout()
-        top.setSpacing(7)
-        self.q_dot = StatusDot()
-        self.q_state = QLabel()
-        self.q_state.setObjectName("queueState")
-        self.q_wait = QLabel()
-        self.q_wait.setObjectName("queueWait")
-        top.addWidget(self.q_dot)
-        top.addWidget(self.q_state)
-        top.addStretch(1)
-        top.addWidget(self.q_wait)
-        cl.addLayout(top)
-        btns = QHBoxLayout()
-        btns.setSpacing(6)
-        self.q_toggle = QPushButton()
-        self.q_sched = QPushButton(_t("Zamanlayıcı"))
-        for b in (self.q_toggle, self.q_sched):
-            b.setObjectName("miniButton")
-            b.setAutoDefault(False)
-            btns.addWidget(b, 1)
-        self.q_toggle.clicked.connect(self._panel_queue_toggle)
-        self.q_sched.clicked.connect(self.a_sched.trigger)
-        cl.addLayout(btns)
-        lay.addWidget(card)
+            w.setToolTip(caption)
+            w.setAccessibleName(caption)
+            lay.addWidget(w)
+        lay.addStretch(1)
         return panel
 
-    def _panel_queue_toggle(self):
-        running = self.mgr.is_queue_running(self._current_queue())
-        (self.a_qstop if running else self.a_qstart).trigger()
-        self._update_panel()
-
     def _update_panel(self):
-        """Panelin sayıları (yalnızca değişen metin yeniden yazılır)."""
+        """Şeridin sayıları (yalnızca değişen metin yeniden yazılır)."""
         def put(lbl, text):
             if lbl.text() != text:
                 lbl.setText(text)
@@ -4149,21 +4149,21 @@ class MainWindow(QMainWindow):
         put(self.sp_unit, unit)
         put(self.speed_lbl, _t("İndirme: {0}").format(_ltr(f"{num} {unit}")))
         active = [i for i in items if i.status in ("downloading", "connecting")]
-        put(self.sp_active, str(len(active)))
+        put(self.sp_active, _t("{0} etkin").format(len(active)))
         etas = [e for e in (i.eta() for i in active) if e is not None]
         put(self.sp_eta, fmt_time(max(etas)) if etas else "–")
         q = self._current_queue()
         running = self.mgr.is_queue_running(q)
-        self.q_dot.set_key("ok" if running else "muted")
-        put(self.q_state, _t("Kuyruk çalışıyor") if running else _t("Kuyruk durdu"))
         waiting = sum(1 for i in items if i.in_queue and self.mgr.queue_of(i) == q and i.status == "queued")
-        put(self.q_wait, _t("{0} bekliyor").format(waiting))
-        put(self.q_toggle, _t("Durdur") if running else _t("Başlat"))
+        tip = (_t("Kuyruk çalışıyor") if running else _t("Kuyruk durdu")) + " · " + _t("{0} bekliyor").format(waiting)
+        if self.speed_panel.toolTip() != tip:
+            self.speed_panel.setToolTip(tip)
 
     def _set_speed_panel(self, on):
         self.mgr.settings["speed_panel"] = bool(on)
         self.mgr.save()
         self.speed_panel.setVisible(bool(on))
+        self.speed_lbl.setVisible(not on)  # şerit kapalıyken toplam hız durum çubuğunda görünür
         if on:
             self._update_panel()
 
@@ -4226,6 +4226,8 @@ class MainWindow(QMainWindow):
             self.page_title.parentWidget().fit()
         if self.page_sub.text() != sub:
             self.page_sub.setText(sub)
+            self.page_title.setToolTip(sub)
+            self.page_title.setAccessibleDescription(sub)
 
     def _build_language_menu(self, mb):
         """Menü çubuğunda sabit 'Language' menüsü: adı her dilde aynı, böylece dili bilmeyen de bulur."""
@@ -4336,7 +4338,7 @@ class MainWindow(QMainWindow):
             if cell and not cell.data(GROUP_ROLE) and cell.checkState() != state:
                 cell.setCheckState(state)
         n, total = len(sel), len(self._visible)
-        self.table.horizontalHeader().set_all_checked(bool(total and n == total))
+        self.table.horizontalHeader().set_all_checked(bool(total and n == total), n > 0)
         if n > 1:
             size = sum(self.mgr.items[i].size or 0 for i in self.selected_ids())
             self.sel_lbl.setText(_t("{0} indirme seçili ({1})  ").format(n, fmt_size(size)))
@@ -4387,6 +4389,7 @@ class MainWindow(QMainWindow):
         if pressed and rows[pressed[0]:pressed[0] + 1] != self._rows[pressed[0]:pressed[0] + 1]:
             t._action_pressed = None  # basılan düğmenin satırına başka indirme geldi: bırakınca ona uygulanmasın
         t.clearSpans()
+        self._row_cache = {}  # satır -> (alt satır, ipucu, miktar); hücreler yeniden kuruluyor
         t.clearContents()
         t.setRowCount(len(rows))
         self._rows = rows
@@ -4395,6 +4398,8 @@ class MainWindow(QMainWindow):
                 cell = QTableWidgetItem()
                 cell.setFlags(Qt.NoItemFlags)
                 cell.setData(GROUP_ROLE, iid)
+                cell.setText(iid[0])
+                cell.setToolTip(f"{iid[0]}: {iid[1]}")  # grup başlığı sayısız çizilir; sayı ipucunda
                 t.setItem(r, SEL, cell)
                 t.setSpan(r, SEL, 1, t.columnCount())
                 t.setRowHeight(r, GROUP_HEIGHT)
@@ -4408,9 +4413,6 @@ class MainWindow(QMainWindow):
                 elif c in (SIZE, ETA, SPEED):
                     cell.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 t.setItem(r, c, cell)
-            f = t.item(r, SPEED).font()
-            f.setBold(True)
-            t.item(r, SPEED).setFont(f)
         if isinstance(cur_id, str) and cur_id in rows:  # klavye konumu ve Shift ile seçimin başlangıcı kaybolmasın
             t.setAutoScroll(False)  # liste geçerli hücreye kaymasın
             t.selectionModel().setCurrentIndex(t.model().index(rows.index(cur_id), cur.column()), QItemSelectionModel.NoUpdate)
@@ -4555,8 +4557,11 @@ class MainWindow(QMainWindow):
         eta_txt, speed_txt = fmt_time(eta), list_speed(speed)
         if it.status not in ("downloading", "connecting", "converting"):  # etkin değil: boş hücre yerine soluk tire
             eta_txt, speed_txt = eta_txt or DASH, speed_txt or DASH
-        vals = (it.filename, _ltr(list_size(it.size)) if it.size else "", st, eta_txt,
-                _ltr(speed_txt) if speed_txt != DASH else DASH, stamp(it.last_try), it.description, stamp(it.added),
+        speed_cell = _ltr(speed_txt) if speed_txt != DASH else DASH
+        if speed_cell != DASH and eta_txt and self.table.isColumnHidden(ETA):  # tek sütun: "48.4 MB/s · 3sn"
+            speed_cell = f"{speed_cell} · {eta_txt}"
+        size_txt = _ltr(list_size(it.size)) if it.size else ""
+        vals = (it.filename, size_txt, st, eta_txt, speed_cell, stamp(it.last_try), it.description, stamp(it.added),
                 stamp(it.extra.get("finished_at")))
         for c, v in enumerate(vals, start=NAME):
             cell = self.table.item(r, c)
@@ -4569,10 +4574,24 @@ class MainWindow(QMainWindow):
             cell0.setIcon(theme.icon("magnet" if it.kind == "torrent" else CAT_ICONS.get(it.category, "general")))
             cell0.setData(ACTIVE_ROLE, it.status in ("downloading", "connecting", "converting"))
             sc.setIcon(self._status_icon(it))
-            self.table.item(r, ACTIONS).setData(ACTIONS_ROLE, self._row_actions(it))
-        sub = self._row_subtitle(it, stamp)
-        if cell0.data(SUB_ROLE) != sub:
+            names = self._row_actions(it)
+            acts = self.table.item(r, ACTIONS)
+            acts.setData(ACTIONS_ROLE, names)
+            acts.setData(Qt.AccessibleTextRole, ", ".join(ACTION_TEXT.get(n, n) for n in names))
+        if it.status == "error":
+            label = _t("Hata: {0}").format(it.error or "")
+        else:
+            label = it.error if it.status == "connecting" and it.error else STATUS_TEXT.get(it.status, it.status)
+        if it.kind == "torrent" and it.status in ("downloading", "seeding"):
+            label += _t("  ·  {0} eş").format(it.peers)
+        sub = (size_txt, label, "bad" if it.status == "error" else "muted")
+        tip = "\n".join(filter(None, (it.filename, self._row_subtitle(it, stamp), detail)))  # gizlenen ayrıntılar
+        key = (sub, tip, detail)
+        if self._row_cache.get(r) != key:  # yalnızca değişen hücre yazılır (2000 satırda da hızlı)
+            self._row_cache[r] = key
             cell0.setData(SUB_ROLE, sub)
+            cell0.setToolTip(tip)
+            sc.setToolTip(detail)
 
     @staticmethod
     def _bar_segments(it):
@@ -5304,6 +5323,14 @@ class MainWindow(QMainWindow):
             self._auto_hidden = auto
         finally:
             self._fitting = False
+        self._speed_header()
+
+    def _speed_header(self):
+        """Kalan süre sütunu gizliyken hız sütunu ikisini birlikte gösterir: "48.4 MB/s · 3sn"."""
+        text = _t("Hız · Kalan süre") if self.table.isColumnHidden(ETA) else COLUMNS[SPEED]
+        head = self.table.horizontalHeaderItem(SPEED)
+        if head.text() != text:
+            head.setText(text)
 
     def batch_add_prompt(self):
         clip = QApplication.clipboard().text()
